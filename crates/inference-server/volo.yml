@@ -1,0 +1,10 @@
+entries:
+  proto:
+    filename: volo_gen.rs
+    protocol: protobuf
+    services:
+    - idl:
+        source: local
+        path: ./proto/tokilake.proto
+        includes:
+        - ./proto

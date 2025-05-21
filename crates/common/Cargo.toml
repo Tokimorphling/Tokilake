@@ -1,0 +1,32 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# uuid.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+
+faststr.workspace = true
+
+futures-util.workspace = true
+
+reqwest.workspace = true
+reqwest-eventsource = "0.6.0"
+tracing.workspace = true
+
+rand = "0.9.1"
+
+
+tracing-appender = { version = "0.2.3", features = ["parking_lot"] }
+tracing-subscriber = { workspace = true, features = [
+    "env-filter",
+    "parking_lot",
+] }
+
+

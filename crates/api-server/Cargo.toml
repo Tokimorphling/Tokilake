@@ -1,0 +1,31 @@
+[package]
+name = "api-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+volo-http = { version = "0.3.1", features = ["json", "server"] }
+tokio-stream = { version = "0.1.15", default-features = false, features = [
+    "sync",
+] }
+
+thiserror.workspace = true
+common.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+faststr.workspace = true
+tracing.workspace = true
+
+tokio.workspace = true
+
+reqwest.workspace = true
+chrono.workspace = true
+
+bytes.workspace = true
+http-body-util = "0.1.3"
+async-stream = "0.3.6"
+futures-util.workspace = true
+storage.workspace = true
+
+inference-server = { path = "../inference-server" }

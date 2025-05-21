@@ -1,0 +1,26 @@
+[package]
+name = "inference-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+volo = { version = "0.10.6"}
+volo-grpc = "0.10.4"
+pilota = "0.11.10"
+
+
+tokio.workspace = true
+futures-util.workspace = true
+tracing.workspace = true
+tokio-stream.workspace = true
+common.workspace = true
+dashmap = { version = "6.1.0", features = ["inline"] }
+
+storage.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+volo-build = "0.10.19"

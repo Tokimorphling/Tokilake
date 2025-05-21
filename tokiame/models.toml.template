@@ -1,0 +1,13 @@
+# config.toml
+# This file stores the configuration for supported models in the registry.
+
+# Each [[supported_models]] block represents one ModelDetails entry.
+[[supported_models]]
+id = "qwen3:0.6b-q4_K_M"
+description = "Phi-2 model running on the sglang engine with a 2K context window." # Optional: add more detailed descriptions
+type = "chat"
+backend_engine = "ollama"
+backend_base = "http://127.0.0.1:11434/v1"
+status = "READY"
+capabilities = { max_context = "2048", streaming_support = "true" }
+

@@ -1,0 +1,313 @@
+syntax = "proto3";
+
+// proto/chat_messages.proto
+package tokilake.inference.v1;
+option go_package = "./internal/pb/tokilake/v1;tokilakev1"; 
+import "google/protobuf/struct.proto";
+// import "google/protobuf/timestamp.proto";
+
+// Wrapper message for repeated ContentPart to be used in a oneof
+message ContentParts { repeated ContentPart parts = 1; }
+
+// Represents a single message in the chat conversation.
+message ChatMessage {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    ROLE_USER = 1;
+    ROLE_ASSISTANT = 2;
+    ROLE_SYSTEM = 3;
+    ROLE_TOOL = 4;
+  }
+  Role role = 1;
+
+  // The content of the message.
+  oneof content_type {
+    string text_content = 2;        // Simple text content.
+    ContentParts multi_content = 3; // For multimodal or complex content.
+  }
+
+  optional string name = 4;
+  optional string tool_call_id = 5;
+  repeated ToolCall tool_calls = 6;
+}
+
+// Represents a part of a multimodal content message.
+message ContentPart {
+  oneof part_type {
+    string text = 1;
+    ImageData image_data = 2;
+    AudioData audio_data = 3;
+    VideoData video_data = 4;
+    ToolCall tool_call = 5;
+    ToolResult tool_result = 6;
+    FileData file_data = 7;
+  }
+}
+
+// ... (rest of your message definitions like ImageData, AudioData, Tool,
+//      ChatCompletionRequest, ChatCompletionResponse, etc., remain the same
+//      as in the previous correct version)
+
+message ImageData {
+  optional string mime_type = 1;
+  optional bytes data = 2;
+  optional string uri = 3;
+}
+
+message AudioData {
+  optional string mime_type = 1;
+  optional bytes data = 2;
+  optional string uri = 3;
+}
+
+message VideoData {
+  optional string mime_type = 1;
+  optional bytes data = 2;
+  optional string uri = 3;
+}
+
+message FileData {
+  optional string mime_type = 1;
+  optional bytes data = 2;
+  optional string uri = 3;
+  optional string file_id = 4;
+}
+
+message Tool {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_FUNCTION = 1;
+    TYPE_RETRIEVAL = 2;
+    TYPE_CODE_INTERPRETER = 3;
+  }
+  Type type = 1;
+  FunctionDeclaration function = 2;
+}
+
+message FunctionDeclaration {
+  string name = 1;
+  optional string description = 2;
+  optional google.protobuf.Struct parameters_schema = 3;
+}
+
+message ToolCall {
+  string id = 1;
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_FUNCTION = 1;
+  }
+  Type type = 2;
+  FunctionCall function = 3;
+}
+
+message FunctionCall {
+  string name = 1;
+  string arguments = 2; // JSON string
+}
+
+message ToolResult {
+  string tool_call_id = 1;
+  oneof output {
+    string text_content = 2;
+    google.protobuf.Struct structured_content = 3;
+    ErrorContent error_content = 4;
+  }
+}
+
+message ErrorContent {
+  string message = 1;
+  optional string code = 2;
+  optional google.protobuf.Struct details = 3;
+}
+
+message ChatCompletionRequest {
+  string model = 1;
+  repeated ChatMessage messages = 2;
+  optional float temperature = 3;
+  optional float top_p = 4;
+  optional int32 n = 5;
+  optional bool stream = 6;
+  repeated string stop = 7;
+  optional int32 max_tokens = 8;
+  optional float presence_penalty = 9;
+  optional float frequency_penalty = 10;
+  map<string, float> logit_bias = 11;
+  optional string user = 12;
+  repeated Tool tools = 13;
+  oneof tool_choice_oneof {
+    string tool_choice_string = 14;
+    ToolChoiceOption tool_choice_object = 15;
+  }
+  optional ResponseFormat response_format = 16;
+  optional int64 seed = 17;
+  optional string system_message = 18;
+  optional google.protobuf.Struct metadata = 19;
+  optional string suffix = 20;
+  optional int32 min_tokens = 21;
+  optional bool logprobs = 22;
+  optional google.protobuf.Struct tool_config = 23;
+  optional int32 top_logprobs = 24;
+  optional google.protobuf.Struct provider_specific_config = 25;
+  optional bool stream_usage = 26;
+  repeated SafetySetting safety_settings = 27;
+  optional GenerationConfig generation_config = 28;
+}
+
+message ToolChoiceOption {
+  string type = 1;
+  FunctionChoice function = 2;
+}
+
+message FunctionChoice { string name = 1; }
+
+message ResponseFormat {
+  string type = 1;
+  optional google.protobuf.Struct json_schema = 2;
+}
+
+message SafetySetting {
+  enum HarmCategory {
+    HARM_CATEGORY_UNSPECIFIED = 0;
+    HARM_CATEGORY_HARASSMENT = 1;
+    HARM_CATEGORY_HATE_SPEECH = 2;
+    HARM_CATEGORY_SEXUALLY_EXPLICIT = 3;
+    HARM_CATEGORY_DANGEROUS_CONTENT = 4;
+  }
+  HarmCategory category = 1;
+  enum HarmBlockThreshold {
+    HARM_BLOCK_THRESHOLD_UNSPECIFIED = 0;
+    BLOCK_NONE = 1;
+    BLOCK_ONLY_HIGH = 2;
+    BLOCK_MEDIUM_AND_ABOVE = 3;
+    BLOCK_LOW_AND_ABOVE = 4;
+  }
+  HarmBlockThreshold threshold = 2;
+}
+
+message GenerationConfig {
+  optional int32 candidate_count = 1;
+  repeated string stop_sequences = 2;
+  optional int32 max_output_tokens = 3;
+  optional float temperature = 4;
+  optional float top_p = 5;
+  optional int32 top_k = 6;
+}
+
+message ChatCompletionResponse {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated Choice choices = 5;
+  optional UsageStats usage = 6;
+  optional string system_fingerprint = 7;
+  optional string stop_reason = 8;
+  optional string stop_sequence = 9;
+  optional PromptFeedback prompt_feedback = 10;
+}
+
+message Choice {
+  int32 index = 1;
+  ChatMessage message = 2;
+  optional Logprobs logprobs = 3;
+  string finish_reason = 4;
+  repeated SafetyRating safety_ratings = 5;
+  optional CitationMetadata citation_metadata = 6;
+}
+
+message Logprobs {
+  // A list of message content tokens with log probability information.
+  repeated TokenLogprob content = 1;
+  // The field 'repeated TopLogprob top_logprobs = 2;' was here and was an error
+  // as TopLogprob was not defined and the detailed top_logprobs are typically
+  // nested within each TokenLogprob.
+}
+
+// Represents a token and its log probability.
+message TokenLogprob {
+  string token = 1;
+  double logprob = 2;
+  // A list of bytes represented as integers. This can be null if tokens are not requested.
+  repeated int32 bytes = 3;
+  // List of top log probabilities for this token location (the alternative tokens).
+  // This field would be populated if `top_logprobs` was requested in the ChatCompletionRequest.
+  repeated TopLogprobAtom top_logprobs = 4; // This name directly maps to OpenAI's field name for this concept
+}
+
+// Represents an individual alternative token and its log probability at a specific position.
+message TopLogprobAtom {
+  string token = 1;
+  double logprob = 2;
+  // A list of bytes represented as integers for this alternative token.
+  repeated int32 bytes = 3;
+}
+
+
+message UsageStats {
+  int32 prompt_tokens = 1;
+  int32 completion_tokens = 2;
+  int32 total_tokens = 3;
+  optional int32 input_tokens = 4;
+  optional int32 output_tokens = 5;
+}
+
+message PromptFeedback {
+  enum BlockReason {
+    BLOCK_REASON_UNSPECIFIED = 0;
+    SAFETY = 1;
+    OTHER = 2;
+  }
+  optional BlockReason block_reason = 1;
+  repeated SafetyRating safety_ratings = 2;
+  optional string block_reason_message = 3;
+}
+
+message SafetyRating {
+  SafetySetting.HarmCategory category = 1;
+  enum HarmProbability {
+    HARM_PROBABILITY_UNSPECIFIED = 0;
+    NEGLIGIBLE = 1;
+    LOW = 2;
+    MEDIUM = 3;
+    HIGH = 4;
+  }
+  HarmProbability probability = 2;
+  optional bool blocked = 3;
+}
+
+message CitationMetadata { repeated CitationSource citation_sources = 1; }
+
+message CitationSource {
+  optional int32 start_index = 1;
+  optional int32 end_index = 2;
+  optional string uri = 3;
+  optional string license = 4;
+}
+
+message ChatCompletionChunk {
+  string id = 1;
+  string object = 2;
+  int64 created = 3;
+  string model = 4;
+  repeated ChunkChoice choices = 5;
+  optional string system_fingerprint = 6;
+  optional UsageStats usage = 7;
+  optional string stop_reason = 8;
+  optional string stop_sequence = 9;
+}
+
+message ChunkChoice {
+  int32 index = 1;
+  ChatMessageDelta delta = 2;
+  optional Logprobs logprobs = 3;
+  optional string finish_reason = 4;
+}
+
+message ChatMessageDelta {
+  optional ChatMessage.Role role = 1;
+  optional string content = 2; // For simple text delta
+  // If you needed to stream deltas of ContentParts, this would also need a
+  // wrapper or a more complex delta structure. For now, assuming simple content
+  // delta.
+  repeated ToolCall tool_calls = 3;
+}

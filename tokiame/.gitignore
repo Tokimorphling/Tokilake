@@ -1,0 +1,111 @@
+# --- Go Specific Ignores ---
+
+# Ignore build artifacts
+# Go compiled binary output (adjust path if your build goes elsewhere)
+# Add your specific project binary name if it's built directly in the root, e.g.,
+# /your_project_name
+/build/
+/dist/
+/output/
+
+# Go test results and coverage files
+*.test
+*.out
+
+# Go dependency management (vendor folder is less common with Go Modules since 1.14)
+vendor/
+
+# Cgo artifacts
+_obj/
+_test/
+
+# --- Python Specific Ignores ---
+
+# Byte-code files
+*.pyc
+__pycache__/
+# Ignore __pycache__ directories wherever they appear
+**/__pycache__/
+
+# Distribution / Packaging
+.Python
+build/       # Can overlap with Go build, but Python uses it too
+develop-eggs/
+.eggs/
+*.egg-info/
+sdist/
+wheel/
+
+# Virtual environment
+.venv/
+venv/
+env/
+.env/
+# Add other common virtual env names if you use them
+# pyenv/
+# .direnv/
+
+# Test / coverage
+.coverage
+.pytest_cache/
+nosetests.xml
+coverage.xml
+htmlcov/
+
+# Documentation
+docs/_build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyBuilder
+target/
+
+# mypy cache
+.mypy_cache/
+
+# Pipenv lock file (often included, uncomment if you want to ignore)
+# Pipfile.lock
+
+# Poetry lock file (often included, uncomment if you want to ignore)
+# poetry.lock
+
+# Data/logs (if not part of the repo data)
+*.log
+*.sqlite3
+/var/
+
+# --- Common Ignores (Editors, OS, etc.) ---
+
+# Editors and IDEs
+.idea/              # IntelliJ/PyCharm/GoLand/WebStorm etc.
+.vscode/            # VS Code
+*.swp               # Vim swap files
+*.swo
+*~                  # Common backup files
+.project            # Eclipse
+.settings/
+.factorypath
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Others
+*.sublime-project
+*.sublime-workspace
+
+# Environment variables files (if not intended to be committed)
+# .env
+# *.env # Already covered specific ones above, but this is more general
+
+
+/internal/pb/
+
+
+
+models.toml

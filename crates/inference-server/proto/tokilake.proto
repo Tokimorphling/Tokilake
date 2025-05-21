@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package tokilake.inference.v1;
+
+option go_package = "./internal/pb/tokilake/v1;tokilakev1";  // Kept as requested
+import "chat_message.proto";
+// import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+// import "google/protobuf/wrappers.proto";
+
+// ------------------------------------------------------------------------
+// Service implemented by Tokilake (the central server).
+// Tokiame instances connect to this service using a bi-directional stream.
+// ------------------------------------------------------------------------
+service TokilakeCoordinatorService { // Renamed for clarity
+  // Tokiame initiates this stream to register and receive tasks.
+  // Tokilake sends tasks down, Tokiame sends results/heartbeats up.
+  rpc EstablishTokiameLink(stream TokiameMessage)
+      returns (stream TokilakeMessage);
+}
+
+// ---- Messages for the Bi-directional Stream ----
+
+// Messages sent FROM Tokiame TO Tokilake
+message TokiameMessage {
+  string tokiame_id =
+      1; // Unique ID for the Tokiame instance sending the message
+
+  oneof payload {
+    RegistrationDetails registration = 2;
+    // InferenceResult result = 3; // For non-streaming or final part of stream
+    StreamedInferenceChunk chunk = 4; // For streaming results
+    Heartbeat heartbeat = 5;
+    TokiameError error_report = 6; // Tokiame reporting an operational error
+  }
+}
+
+// Messages sent FROM Tokilake TO Tokiame
+message TokilakeMessage {
+  string task_id = 1; // Tokilake specifies which Tokiame this message is for (useful if
+                                // multiplexing on Tokilake side) Or, can be implicit if one stream =
+                                // one Tokiame
+  // int32 request_id = 2;         // Unique ID for the request, used for tracking
+  oneof payload {
+    ChatCompletionRequest chatcompletion_request = 2; 
+    Acknowledgement ack = 3;    // Generic acknowledgement
+    // ControlCommand command = 5; // e.g., "shutdown_gracefully", "unload_model"
+    ControlCommand command = 4;
+  }
+}
+
+
+
+// ---- Detailed Message Payloads for TokiameMessage ----
+
+message RegistrationDetails {
+  string tokiame_namespace = 1; // Optional, e.g., internal IP for logging
+  optional string tokiame_password = 2;
+  repeated ModelDetails supported_models = 3;
+  // string tokiame_version = 3;
+  // map<string, string> metadata = 4;
+}
+
+// message InferenceResult {
+//   string request_id = 1; // Corresponds to the request_id in TaskInstruction
+//   ChatCompletionResponse response = 2; // Uses the existing GenerateResponse structure
+// }
+
+message StreamedInferenceChunk {
+  string request_id = 1;
+  // Using parts of StreamGenerateResponse directly
+  string model_id = 2;
+
+
+  ChatCompletionChunk chunk = 3;
+
+}
+
+message Heartbeat {
+  google.protobuf.Timestamp timestamp = 1;
+  ServingStatus current_status = 2; // Tokiame's overall status
+  // repeated ModelDetails current_model_status = 3; // Can send updated model
+  // load/status
+}
+
+message TokiameError {
+  string request_id_associated = 1; // If error is related to a specific task
+  ErrorDetails error_details = 2;
+}
+
+// ---- Detailed Message Payloads for TokilakeMessage ----
+
+message TaskInstruction {
+  // Reuses GenerateRequest for the task details
+  // string request_id = 1;
+  ChatCompletionRequest chatcompletion_request = 1; // For chat-based tasks
+  // string task_id = 2; // Could be same as generate_request.request_id or a
+  // separate one from Tokilake
+}
+
+message Acknowledgement {
+  string message_id_acknowledged = 1; // ID of the TokiameMessage being acked
+  bool success = 2;
+  string details = 3;
+}
+
+
+message ControlCommand {
+  enum CommandType {
+    COMMAND_TYPE_UNSPECIFIED = 0;
+    SHUTDOWN_GRACEFULLY = 1;
+    UNLOAD_MODEL = 2;
+    REPORT_STATUS = 3;
+  }
+  CommandType command_type = 1;
+  string request_id = 2; // if command is model-specific
+  // request_id is the combination of: [namespace]:[unique-id]
+  optional string reason = 3;
+}
+
+
+// ModelDetails and ErrorDetails remain crucial
+message ModelDetails {
+  string id = 1;
+  string description = 2;
+  string type = 3;
+  map<string, string> capabilities = 4;
+  string backend_engine = 5;
+  string status = 6;             // "LOADING", "READY", "ERROR"
+  int32 current_load_factor = 7; // e.g., 0-100
+}
+
+enum ServingStatus {
+  SERVING_STATUS_UNKNOWN = 0;
+  SERVING_STATUS_SERVING = 1;
+  SERVING_STATUS_NOT_SERVING = 2;
+  SERVING_STATUS_DEGRADED = 3;
+}
+
+message ErrorDetails {
+  int32 code = 1;
+  string message = 2;
+  string type = 3;
+}
+
+
