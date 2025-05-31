@@ -9,8 +9,7 @@ members = [
     "crates/api-server",
     "crates/common",
     "crates/inference-server",
-    "crates/storage",
-    "crates/tokilake-dashboard",
+    "crates/storage"
 ]
 
 [workspace.dependencies]

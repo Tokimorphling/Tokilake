@@ -6,7 +6,7 @@ pub fn logging_stdout() -> impl Drop {
     let default_level = if cfg!(debug_assertions) {
         LevelFilter::DEBUG
     } else {
-        LevelFilter::INFO 
+        LevelFilter::INFO
     };
     tracing_subscriber::registry()
         // .with(console_subscriber::spawn())

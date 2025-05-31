@@ -1,9 +1,7 @@
 use crate::cache::KVCache;
 use crate::{Storage, error::Result};
 use common::clients::ForwardClient;
-
 use faststr::FastStr;
-
 use tracing::info;
 
 impl<C: KVCache<ForwardClient>> Storage<C> {

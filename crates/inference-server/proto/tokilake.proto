@@ -28,6 +28,7 @@ message TokiameMessage {
 
   oneof payload {
     RegistrationDetails registration = 2;
+    Models models = 3;
     // InferenceResult result = 3; // For non-streaming or final part of stream
     StreamedInferenceChunk chunk = 4; // For streaming results
     Heartbeat heartbeat = 5;
@@ -52,6 +53,11 @@ message TokilakeMessage {
 
 
 // ---- Detailed Message Payloads for TokiameMessage ----
+
+message Models {
+  repeated ModelDetails supported_models = 1;
+}
+
 
 message RegistrationDetails {
   string tokiame_namespace = 1; // Optional, e.g., internal IP for logging
@@ -109,7 +115,7 @@ message ControlCommand {
   enum CommandType {
     COMMAND_TYPE_UNSPECIFIED = 0;
     SHUTDOWN_GRACEFULLY = 1;
-    UNLOAD_MODEL = 2;
+    MODELS = 2;
     REPORT_STATUS = 3;
   }
   CommandType command_type = 1;
@@ -117,6 +123,8 @@ message ControlCommand {
   // request_id is the combination of: [namespace]:[unique-id]
   optional string reason = 3;
 }
+
+
 
 
 // ModelDetails and ErrorDetails remain crucial

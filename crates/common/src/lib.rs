@@ -8,7 +8,6 @@ pub mod random;
 pub mod stream;
 pub mod text;
 
-
 mod log;
 
 pub use log::logging_stdout;

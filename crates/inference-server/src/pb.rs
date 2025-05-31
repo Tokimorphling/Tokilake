@@ -1,10 +1,9 @@
 include!(concat!(env!("OUT_DIR"), concat!("/", "volo_gen.rs")));
+use self::control_command::CommandType;
 use common::{data::ChatCompletionsData, messages::Message, proxy::GrpcOriginalPayload};
 use tokiame_message::Payload as TokiamePayload;
 use tokilake_message::Payload as TokilakePayload;
 pub use volo_gen::tokilake::inference::v1::*;
-
-use self::control_command::CommandType;
 
 impl From<GrpcOriginalPayload> for TokilakePayload {
     fn from(val: GrpcOriginalPayload) -> Self {
@@ -135,7 +134,6 @@ impl<'a> ChatCompletionRequestBuilder<'a> {
         self.max_tokens = tokens;
         self
     }
-
 
     // --- Setters for "unusually used" parameters (allowing them to be set if needed) ---
     pub fn top_p(mut self, top_p: Option<f32>) -> Self {
@@ -300,7 +298,6 @@ mod converts {
 #[cfg(test)]
 mod tests {
     use crate::pb::build_chat_completion_request;
-
     use common::data::ChatCompletionsData;
     use pilota::prost::Message;
     #[test]

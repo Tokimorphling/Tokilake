@@ -250,7 +250,8 @@ mod tests {
         for val_in_vec in my_vec.iter() {
             assert!(
                 counts.contains_key(val_in_vec) && counts[val_in_vec] > 0,
-                "Element {val_in_vec} from original vector was not found in {num_samples} random samples. Counts: {counts:?}"
+                "Element {val_in_vec} from original vector was not found in {num_samples} random \
+                 samples. Counts: {counts:?}"
             );
         }
         // For debugging/observation:

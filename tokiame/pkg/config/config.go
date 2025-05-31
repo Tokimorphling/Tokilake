@@ -3,28 +3,14 @@ package config
 import (
 	"bytes"
 	"fmt"
-
-	// "log"
 	"os"
 	"path/filepath"
 	"sync"
 
-	// "time" // No longer directly used in this file for the demo sleep
-
 	"github.com/BurntSushi/toml"
 	"github.com/fsnotify/fsnotify"
 
-	// You would import your actual generated protobuf package here.
-	// For example:
-	// pb "your_module_path/gen/go/open/v1"
-	//
-	// For this example, we'll define a placeholder for ModelDetails
-	// and a placeholder 'pb' package to make the code runnable.
-	// **IMPORTANT**: Replace these placeholders with your actual imports and struct definitions.
-	// If your main package also needs to know about ModelDetails, it would use config.ModelDetails.
-	// pb "tokiame/internal/pb/tokilake/v1" // Placeholder import
 	"tokiame/pkg/log"
-	// pb "tokiame/internal/pb/tokilake/v1"
 )
 
 // --- Placeholder for your actual protobuf-generated ModelDetails struct ---
@@ -52,11 +38,11 @@ type ModelConfig struct {
 
 // Manager handles the application configuration, including loading, watching for changes, and saving.
 type Manager struct {
-	filePath string
-	current  *ModelConfig
-	mu       sync.RWMutex
+	FilePath string       // Exported
+	Current  *ModelConfig // Exported
+	Mu       sync.RWMutex // Exported
 	watcher  *fsnotify.Watcher
-	done     chan struct{} // Channel to signal the watcher to stop
+	Done     chan struct{} // Channel to signal the watcher to stop
 }
 
 // NewManager creates a new configuration Manager.
@@ -66,15 +52,15 @@ func NewManager(filePath string) (*Manager, error) {
 	// tokilakev1.Acknowledgement
 
 	m := &Manager{
-		filePath: filePath,
-		done:     make(chan struct{}),
+		FilePath: filePath,
+		Done:     make(chan struct{}),
 	}
 
 	// Initial load
 	if err := m.load(); err != nil {
 		return nil, fmt.Errorf("initial config load failed: %w", err)
 	}
-	log.Infof("Configuration initially loaded successfully from '%s'.", m.filePath)
+	log.Infof("Configuration initially loaded successfully from '%s'.", m.FilePath)
 	m.PrintState()
 
 	// Initialize and start watcher
@@ -86,12 +72,12 @@ func NewManager(filePath string) (*Manager, error) {
 
 	go m.watchFile() // Start watching in a goroutine
 
-	configFileDir := filepath.Dir(m.filePath)
+	configFileDir := filepath.Dir(m.FilePath)
 	if err := m.watcher.Add(configFileDir); err != nil {
 		m.watcher.Close() // Clean up watcher if adding path fails
 		return nil, fmt.Errorf("failed to add config file directory ('%s') to watcher: %w", configFileDir, err)
 	}
-	log.Infof("Watching for changes in directory '%s' for file '%s'...", configFileDir, filepath.Base(m.filePath))
+	log.Infof("Watching for changes in directory '%s' for file '%s'...", configFileDir, filepath.Base(m.FilePath))
 
 	return m, nil
 }
@@ -99,19 +85,19 @@ func NewManager(filePath string) (*Manager, error) {
 // load reads the TOML file and updates the manager's current configuration.
 // This is an internal method; external users trigger reloads via file changes.
 func (m *Manager) load() error {
-	tomlData, err := os.ReadFile(m.filePath)
+	tomlData, err := os.ReadFile(m.FilePath)
 	if err != nil {
-		return fmt.Errorf("error reading TOML config file '%s': %w", m.filePath, err)
+		return fmt.Errorf("error reading TOML config file '%s': %w", m.FilePath, err)
 	}
 
 	var conf ModelConfig
 	if _, err := toml.Decode(string(tomlData), &conf); err != nil {
-		return fmt.Errorf("error decoding TOML data from '%s': %w", m.filePath, err)
+		return fmt.Errorf("error decoding TOML data from '%s': %w", m.FilePath, err)
 	}
 
-	m.mu.Lock()
-	m.current = &conf
-	m.mu.Unlock()
+	m.Mu.Lock()
+	m.Current = &conf
+	m.Mu.Unlock()
 	return nil
 }
 
@@ -119,11 +105,11 @@ func (m *Manager) load() error {
 // The returned pointer should be treated as read-only.
 // For modifications, use specific methods like ModifyModelStatus.
 func (m *Manager) Get() *ModelConfig {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.Mu.RLock()
+	defer m.Mu.RUnlock()
 	// Consider returning a deep copy if external modifications are a concern
 	// and not managed through dedicated methods. For now, RLock protects reads.
-	return m.current
+	return m.Current
 }
 
 // PrintState logs a summary of the current configuration.
@@ -135,17 +121,17 @@ func (m *Manager) PrintState() {
 	}
 	log.Infof("Config Manager: Current configuration has %d models.", len(cfg.SupportedModels))
 	for _, model := range cfg.SupportedModels {
-		log.Infof("  Model ID: %s, Status: %s, Load: %d%%", model.Id, model.Status, model.CurrentLoadFactor)
+		log.Infof("   Model ID: %s, Status: %s, Load: %d%%", model.Id, model.Status, model.CurrentLoadFactor)
 	}
 }
 
 // watchFile continuously monitors the configuration file for changes.
 func (m *Manager) watchFile() {
-	configFileName := filepath.Base(m.filePath)
+	configFileName := filepath.Base(m.FilePath)
 
 	for {
 		select {
-		case <-m.done: // Check if we need to stop watching
+		case <-m.Done: // Check if we need to stop watching
 			log.Info("Config Manager: Stopping file watcher.")
 			return
 		case event, ok := <-m.watcher.Events:
@@ -158,9 +144,9 @@ func (m *Manager) watchFile() {
 					log.Infof("Config Manager: File event: %s for %s", event.Op.String(), event.Name)
 					log.Info("Config Manager: Reloading configuration...")
 					if err := m.load(); err != nil {
-						log.Infof("Config Manager: Error reloading config file '%s': %v. Keeping previous configuration.", m.filePath, err)
+						log.Infof("Config Manager: Error reloading config file '%s': %v. Keeping previous configuration.", m.FilePath, err)
 					} else {
-						log.Infof("Config Manager: Configuration reloaded successfully from '%s'.", m.filePath)
+						log.Infof("Config Manager: Configuration reloaded successfully from '%s'.", m.FilePath)
 						m.PrintState() // Optional: print state after successful reload
 					}
 				}
@@ -178,9 +164,9 @@ func (m *Manager) watchFile() {
 // Save writes the current configuration back to the TOML file.
 // WARNING: This will overwrite the existing file and may lose comments/formatting.
 func (m *Manager) Save() error {
-	m.mu.RLock() // Lock for reading the current config
-	configToSave := m.current
-	m.mu.RUnlock()
+	m.Mu.RLock() // Lock for reading the current config
+	configToSave := m.Current
+	m.Mu.RUnlock()
 
 	if configToSave == nil {
 		return fmt.Errorf("config manager: cannot save nil configuration")
@@ -192,26 +178,26 @@ func (m *Manager) Save() error {
 		return fmt.Errorf("config manager: error encoding configuration to TOML: %w", err)
 	}
 
-	if err := os.WriteFile(m.filePath, buffer.Bytes(), 0644); err != nil {
-		return fmt.Errorf("config manager: error writing configuration to file '%s': %w", m.filePath, err)
+	if err := os.WriteFile(m.FilePath, buffer.Bytes(), 0644); err != nil {
+		return fmt.Errorf("config manager: error writing configuration to file '%s': %w", m.FilePath, err)
 	}
 
-	log.Infof("Config Manager: Configuration successfully saved to '%s'.", m.filePath)
+	log.Infof("Config Manager: Configuration successfully saved to '%s'.", m.FilePath)
 	return nil
 }
 
 // ModifyModelStatus updates the status and load factor of a specific model
 // and then saves the entire configuration.
 func (m *Manager) ModifyModelStatus(modelID string, newStatus string, newLoadFactor int32) error {
-	m.mu.Lock() // Acquire a full lock for modification and subsequent save
-	defer m.mu.Unlock()
+	m.Mu.Lock() // Acquire a full lock for modification and subsequent save
+	defer m.Mu.Unlock()
 
-	if m.current == nil {
+	if m.Current == nil {
 		return fmt.Errorf("config manager: current configuration is not loaded, cannot modify")
 	}
 
 	found := false
-	for _, model := range m.current.SupportedModels {
+	for _, model := range m.Current.SupportedModels {
 		if model.Id == modelID {
 			log.Infof("Config Manager: Updating model '%s': Status from '%s' to '%s', Load from %d to %d",
 				model.Id, model.Status, newStatus, model.CurrentLoadFactor, newLoadFactor)
@@ -230,22 +216,22 @@ func (m *Manager) ModifyModelStatus(modelID string, newStatus string, newLoadFac
 	// Re-encode the m.current which is already locked
 	var buffer bytes.Buffer
 	encoder := toml.NewEncoder(&buffer)
-	if err := encoder.Encode(m.current); err != nil {
+	if err := encoder.Encode(m.Current); err != nil {
 		return fmt.Errorf("config manager: error encoding modified configuration to TOML: %w", err)
 	}
 
-	if err := os.WriteFile(m.filePath, buffer.Bytes(), 0644); err != nil {
-		return fmt.Errorf("config manager: error writing modified configuration to file '%s': %w", m.filePath, err)
+	if err := os.WriteFile(m.FilePath, buffer.Bytes(), 0644); err != nil {
+		return fmt.Errorf("config manager: error writing modified configuration to file '%s': %w", m.FilePath, err)
 	}
 
-	log.Infof("Config Manager: Model '%s' updated and configuration saved to '%s'.", modelID, m.filePath)
+	log.Infof("Config Manager: Model '%s' updated and configuration saved to '%s'.", modelID, m.FilePath)
 	return nil
 }
 
 // Close stops the file watcher and cleans up resources.
 func (m *Manager) Close() {
 	log.Info("Config Manager: Closing...")
-	close(m.done) // Signal the watcher goroutine to stop
+	close(m.Done) // Signal the watcher goroutine to stop
 	if m.watcher != nil {
 		m.watcher.Close()
 	}

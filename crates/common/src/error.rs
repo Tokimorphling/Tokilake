@@ -1,8 +1,7 @@
+use crate::stream::sse::SseEvent;
 use faststr::FastStr;
 use reqwest_eventsource::CannotCloneRequestError;
 use thiserror::Error;
-
-use crate::stream::sse::SseEvent;
 
 #[derive(Debug, Error)]
 pub enum Error {

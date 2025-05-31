@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"tokiame/api"
 	"tokiame/internal/utils"
 	"tokiame/pkg/cli"
 	"tokiame/pkg/config"
@@ -17,29 +18,29 @@ import (
 
 func main() {
 	log.SetLogger(zapadaptor.NewConsoleLogger(zapadaptor.WithZapOptions(zap.AddCaller(), zap.AddCallerSkip(3))))
-	arg := cli.Parse()
+	cli.Execute()
+	arg := cli.GetArgs()
+
 	namespace := arg.Namespace
 	serverAddress := arg.Address
-
+	apiAddress := arg.ApiAddress
 	utils.Print()
 
-	log.Infof("client namespace: %s Tokilake address: %s", namespace, serverAddress)
+	log.Infof("client namespace: %s tokilake address: %s", namespace, serverAddress)
 
 	modelManager, err := config.NewManager("models.toml")
 	if err != nil {
 		log.Fatal("no model config file")
 		panic("no model config")
 	}
-	supportedModels := modelManager.Get().SupportedModels
 
-	// clientUUID := uuid.New().String()
-	// clientID := fmt.Sprintf("go-tokiame-%s", clientUUID[:8])
-
-	client := rpc.NewTokiameClient(namespace, supportedModels)
+	go api.RunApiServer(apiAddress, modelManager)
 
 	// // Create a main context that can be cancelled by SIGINT/SIGTERM
 	mainCtx, mainCancel := context.WithCancel(context.Background())
 	defer mainCancel()
+
+	client := rpc.NewTokiameClient(mainCtx, serverAddress, namespace, modelManager)
 
 	// // Handle OS signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -51,7 +52,7 @@ func main() {
 	}()
 
 	log.Infof("Starting Tokiame client: %s", namespace)
-	err = client.Run(mainCtx, serverAddress)
+	err = client.Run()
 	if err != nil {
 		log.Fatalf("Client run failed: %v", err)
 	}
@@ -59,4 +60,5 @@ func main() {
 	log.Infof("Client [%s] performing final cleanup...", namespace)
 	client.Close() // Ensure all resources are released
 	log.Infof("Client [%s] shut down gracefully.", namespace)
+
 }

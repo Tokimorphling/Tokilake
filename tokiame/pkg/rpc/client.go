@@ -16,37 +16,39 @@ import (
 	openaiclient "tokiame/pkg/openai_client"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/resolver/dns"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TokiameClient struct {
-	Namespace       string
-	conn            *grpc.ClientConn
-	stream          pb.TokilakeCoordinatorService_EstablishTokiameLinkClient
-	supportedModels map[string]*config.ModelDetails
-	sendChan        chan *pb.TokiameMessage
-	wg              sync.WaitGroup
-	cancelCtx       context.CancelFunc
-	tasksMu         sync.Mutex
-	tasks           map[string]context.CancelFunc
+	Namespace  string
+	conn       *grpc.ClientConn
+	stream     pb.TokilakeCoordinatorService_EstablishTokiameLinkClient
+	mainCtx    context.Context
+	serverAddr string
+	sendChan   chan *pb.TokiameMessage
+	wg         sync.WaitGroup
+	cancelCtx  context.CancelFunc
+	tasksMu    sync.Mutex
+	tasks      map[string]context.CancelFunc
+	conf       *config.Manager
 }
 
-func NewTokiameClient(namespace string, models []*config.ModelDetails) *TokiameClient {
-	modelsMp := utils.SliceToMap(models, func(model *config.ModelDetails) string {
-		return model.Id
-	})
+func NewTokiameClient(ctx context.Context, address string, namespace string, conf *config.Manager) *TokiameClient {
 	return &TokiameClient{
-		Namespace:       namespace,
-		supportedModels: modelsMp,
-		sendChan:        make(chan *pb.TokiameMessage, 10240), // Buffered channel
-		tasks:           make(map[string]context.CancelFunc),
+		Namespace:  namespace,
+		mainCtx:    ctx,
+		serverAddr: address,
+		conf:       conf,
+		sendChan:   make(chan *pb.TokiameMessage, 10240), // Buffered channel
+		tasks:      make(map[string]context.CancelFunc),
 	}
 }
 
 func (tc *TokiameClient) Connect(ctx context.Context, serverAddress string) error {
-	creds := credentials.NewClientTLSFromCert(nil, "")
+	// creds := credentials.NewClientTLSFromCert(nil, "")
+	creds := insecure.NewCredentials()
 	var err error
 	tc.conn, err = grpc.NewClient(serverAddress, grpc.WithTransportCredentials(creds))
 	if err != nil {
@@ -93,6 +95,7 @@ func (tc *TokiameClient) sender() {
 		if tc.stream == nil {
 			log.Infof("[%s] Sender: Stream is nil, cannot send message", tc.Namespace)
 			continue
+
 		}
 		if err := tc.stream.Send(msg); err != nil {
 			log.Infof("[%s] Error sending message via stream: %v", tc.Namespace, err)
@@ -120,11 +123,14 @@ func (tc *TokiameClient) receiver() {
 		if tc.stream == nil {
 			log.Infof("[%s] Receiver: Stream is nil, cannot receive.", tc.Namespace)
 			time.Sleep(1 * time.Second) // Avoid busy loop if stream is not yet established or broken
+
 			continue
 		}
 		in, err := tc.stream.Recv()
 		if err == io.EOF {
 			log.Infof("[%s] Stream closed by Tokilake (EOF)", tc.Namespace)
+			tc.stream = nil
+			time.Sleep(3 * time.Second)
 			return // Stream ended
 		}
 		if err != nil {
@@ -142,16 +148,13 @@ func (tc *TokiameClient) receiver() {
 			log.Infof("[%s] Received Ack: Success=%t, Details='%s'", tc.Namespace, ack.Success, ack.Details)
 		} else if req := in.GetChatcompletionRequest(); req != nil {
 			log.Infof("[%s] Received TaskInstruction for request_id: %s, model: %s", in.TaskId, tc.Namespace, req.Model)
-			// TODO: Process the task (e.g., call local inference engine)
-			// For now, just acknowledge we got it. Simulate sending a dummy result after a delay.
-			// go tc.simulateTaskProcessing(task)
 			taskCtx, taskCancel := context.WithCancel(context.Background())
 			tc.tasksMu.Lock()
 			tc.tasks[in.TaskId] = taskCancel
 			tc.tasksMu.Unlock()
 			go tc.StreamTaskProcessing(taskCtx, req, in.TaskId)
 		} else if cmd := in.GetCommand(); cmd != nil {
-			log.Infof("[%s] Received Command: %s, Reason: %s", tc.Namespace, pb.ControlCommand_CommandType_name[int32(cmd.CommandType)], cmd.Reason)
+			log.Infof("[%s] Received Command: %s", tc.Namespace, pb.ControlCommand_CommandType_name[int32(cmd.CommandType)])
 			if cmd.CommandType == pb.ControlCommand_SHUTDOWN_GRACEFULLY {
 				log.Infof("[%s] Received shutdown command, initiating stop task %s.", tc.Namespace, in.TaskId)
 				tc.tasksMu.Lock()
@@ -162,11 +165,23 @@ func (tc *TokiameClient) receiver() {
 					log.Debugf("[%s] Task %s not found in tasks map, already finished", tc.Namespace, in.TaskId)
 				}
 				tc.tasksMu.Unlock()
+			} else if cmd.CommandType == pb.ControlCommand_MODELS {
+				log.Infof("[%s] Received models command", tc.Namespace)
+				tc.ProcessModels(context.Background(), in.TaskId)
+
 			}
 		} else {
 			log.Infof("[%s] Received unknown message type from Tokilake", tc.Namespace)
 		}
 	}
+}
+
+func (tc *TokiameClient) SupportedModels() *map[string]*config.ModelDetails {
+	models := tc.conf.Get().SupportedModels
+	modelsMp := utils.SliceToMap(models, func(model *config.ModelDetails) string {
+		return model.Id
+	})
+	return &modelsMp
 }
 
 func (tc *TokiameClient) StreamTaskProcessing(ctx context.Context, req *pb.ChatCompletionRequest, taskId string) {
@@ -179,12 +194,12 @@ func (tc *TokiameClient) StreamTaskProcessing(ctx context.Context, req *pb.ChatC
 	}
 	log.Debugf("[%s] request: %s", tc.Namespace, string(jsonReq))
 
-	if _, ok := tc.supportedModels[req.Model]; !ok {
+	if _, ok := (*tc.SupportedModels())[req.Model]; !ok {
 		log.Errorf("[%s] not registerd", req.Model)
 		return
 	}
 
-	innerModel := tc.supportedModels[req.Model]
+	innerModel := (*tc.SupportedModels())[req.Model]
 	baseURL := innerModel.BackendBase
 	messages := req.Messages
 
@@ -212,6 +227,7 @@ func (tc *TokiameClient) StreamTaskProcessing(ctx context.Context, req *pb.ChatC
 
 	if err != nil {
 		log.Errorf("Error creating stream: %v", err)
+		return
 	}
 
 	numChunks := 0
@@ -251,18 +267,8 @@ func (tc *TokiameClient) StreamTaskProcessing(ctx context.Context, req *pb.ChatC
 }
 
 func (tc *TokiameClient) SendRegistration() {
-	supportedModels := make([]*pb.ModelDetails, 0)
-	for _, model := range tc.supportedModels {
-		detail := &pb.ModelDetails{
-			Id:          model.Id,
-			Description: model.Description,
-			Type:        model.Type,
-		}
-		supportedModels = append(supportedModels, detail)
-	}
 
 	regDetails := &pb.RegistrationDetails{
-		SupportedModels:  supportedModels,
 		TokiameNamespace: tc.Namespace,
 	}
 	msg := &pb.TokiameMessage{
@@ -272,6 +278,36 @@ func (tc *TokiameClient) SendRegistration() {
 		},
 	}
 	tc.sendChan <- msg
+}
+
+func (tc *TokiameClient) ProcessModels(ctx context.Context, taskid string) {
+	log.Debugf("Processing all models: [%s]", taskid)
+	models := tc.conf.Get().SupportedModels
+	log.Debug(models)
+
+	supportedModels := make([]*pb.ModelDetails, 0)
+	for _, model := range models {
+		supportedModels = append(supportedModels, &pb.ModelDetails{
+			Id:            model.Id,
+			Description:   model.Description,
+			Type:          model.Type,
+			Capabilities:  model.Capabilities,
+			BackendEngine: model.BackendEngine,
+			Status:        model.Status,
+		})
+	}
+
+	payload := &pb.TokiameMessage_Models{
+		Models: &pb.Models{
+			SupportedModels: supportedModels,
+		},
+	}
+
+	message := &pb.TokiameMessage{
+		TokiameId: taskid,
+		Payload:   payload,
+	}
+	tc.sendChan <- message
 }
 
 func (tc *TokiameClient) StartHeartbeat(ctx context.Context, interval time.Duration) {
@@ -313,8 +349,8 @@ func (tc *TokiameClient) StartHeartbeat(ctx context.Context, interval time.Durat
 	}()
 }
 
-func (tc *TokiameClient) Run(mainCtx context.Context, address string) error {
-	if err := tc.Connect(mainCtx, address); err != nil {
+func (tc *TokiameClient) Run() error {
+	if err := tc.Connect(tc.mainCtx, tc.serverAddr); err != nil {
 		return err
 	}
 
@@ -323,10 +359,11 @@ func (tc *TokiameClient) Run(mainCtx context.Context, address string) error {
 	go tc.receiver()
 
 	tc.SendRegistration()
-	// tc.StartHeartbeat(mainCtx, 15*time.Second) // Send heartbeat every 15 seconds
-	tc.StartHeartbeat(mainCtx, 20*time.Second) // Send heartbeat every 5 seconds
+
+	tc.StartHeartbeat(tc.mainCtx, 120*time.Second) // Send heartbeat every 120 seconds
+
 	// Wait for context cancellation (e.g. Ctrl+C)
-	<-mainCtx.Done()
+	<-tc.mainCtx.Done()
 	log.Infof("[%s] Main context cancelled, shutting down client...", tc.Namespace)
 	return nil
 }

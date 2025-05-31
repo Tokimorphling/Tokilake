@@ -1,12 +1,15 @@
-use faststr::FastStr;
-
 use crate::data::ChatCompletionsData;
+use faststr::FastStr;
 #[derive(Debug)]
 pub enum GrpcOriginalPayload {
     ChatCompletionsRequest(ChatCompletionsData),
     StreamInferenceChunkResponse(FastStr),
     StreamInferenceChunkEnd,
+    
+
     Empty,
+
+
 }
 
 pub enum SseStatus {}

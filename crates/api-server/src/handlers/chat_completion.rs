@@ -3,6 +3,10 @@ use crate::{
     error::Result,
     tools::{create_done_frame, create_text_frame},
 };
+use crate::{
+    models::ChatCompletionRequest,
+    tools::{build_http_client, find_forward_clients, generate_completion_id, split_model},
+};
 use async_stream::stream;
 use chrono::Utc;
 use common::proxy::chat_openai::{OpenAIClient, OpenAIClinetConfig};
@@ -19,9 +23,8 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
-
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 use tracing::{debug, info, warn};
 use volo_http::{
     response::Response,
@@ -32,11 +35,6 @@ use volo_http::{
         route::{Router, post},
     },
     utils::Extension,
-};
-
-use crate::{
-    models::ChatCompletionRequest,
-    tools::{build_http_client, find_forward_clients, generate_completion_id, split_model},
 };
 
 #[derive(Debug)]
@@ -50,6 +48,7 @@ async fn chat_completion_handler(
     Extension(server): Extension<InferenceServer>,
     Json(req): Json<ChatCompletionRequest>,
 ) -> Response {
+    debug!(req=?req);
     if !req.stream {
         return (
             StatusCode::BAD_REQUEST,

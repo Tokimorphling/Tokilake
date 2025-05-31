@@ -1,3 +1,11 @@
+use super::chat_completion::ResEvent;
+use crate::error::Result;
+use crate::handlers::chat_completion::convert_body_to_data;
+use crate::models::ChatCompletionRequest;
+use crate::tools::create_done_frame;
+use crate::tools::create_text_frame;
+use crate::tools::generate_completion_id;
+use crate::tools::generate_task_id;
 use async_stream::stream;
 use chrono::Utc;
 use common::proxy::GrpcOriginalPayload;
@@ -11,13 +19,6 @@ use inference_server::map_to_sse_stream;
 use reqwest::StatusCode;
 use std::sync::Arc;
 use tracing::info;
-
-use crate::error::Result;
-use crate::handlers::chat_completion::convert_body_to_data;
-use crate::models::ChatCompletionRequest;
-use crate::tools::create_done_frame;
-use crate::tools::create_text_frame;
-
 use volo_http::{
     response::Response,
     server::{
@@ -28,11 +29,6 @@ use volo_http::{
     },
     utils::Extension,
 };
-
-use crate::tools::generate_completion_id;
-use crate::tools::generate_task_id;
-
-use super::chat_completion::ResEvent;
 
 async fn chat_completion_handler(
     Extension(server): Extension<InferenceServer>,

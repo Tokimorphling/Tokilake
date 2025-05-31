@@ -15,6 +15,7 @@ pub async fn run_api_server(addr: SocketAddr, server: InferenceServer) {
         .merge(handlers::private_chat_completion_router())
         .merge(handlers::chat_completion_router())
         .merge(handlers::public_models_router())
+        .merge(handlers::private_model_router())
         // .layer(Extension(db))
         .layer(Extension(server));
     let addr = Address::from(addr);

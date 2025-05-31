@@ -4,7 +4,6 @@ use crate::{
     data::{ChatCompletionsData, RequestData},
     stream::sse::{SseHandler, SseMmessage, sse_stream},
 };
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 #[derive(Debug, Serialize, Deserialize)]

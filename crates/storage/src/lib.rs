@@ -4,16 +4,13 @@ mod clients;
 
 pub mod error;
 use cache::KVCache;
+pub use cache::lru::ClientCache;
+use common::clients::ForwardClient;
 use error::{Error, Result};
-
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 use tokio::time::{self, Instant};
 use tracing::{debug, info};
-
-use common::clients::ForwardClient;
-
-pub use cache::lru::ClientCache;
 
 #[derive(Clone)]
 pub struct Storage<C> {
@@ -82,9 +79,8 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
     use sqlx::postgres::PgPoolOptions;
+    use std::env;
     pub async fn setup_db() -> sqlx::PgPool {
         let database_url = env::var("DATABASE_URL")
             .unwrap_or("postgres://postgres:123456@127.0.0.1:5432/tokilake".into());
