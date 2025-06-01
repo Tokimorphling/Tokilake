@@ -174,7 +174,7 @@ async fn create_sse_response<S, T>(
     model_name: FastStr,
 ) -> Sse<impl Stream<Item = Result<Event>>>
 where
-    S: Stream<Item = T> + 'static,
+    S: Stream<Item = T>,
     T: Into<ResEvent>,
 {
     let comp_id = generate_completion_id();

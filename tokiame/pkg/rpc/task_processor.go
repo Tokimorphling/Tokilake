@@ -49,19 +49,6 @@ func (tc *TokiameClient) processChatCompletionStream(taskCtx context.Context, re
 		topp = *req.TopP
 	}
 
-	// Ensure APIKey is sourced correctly, e.g., from modelDetails or tc.conf
-	// apiKey := modelDetails.ApiKey // Assuming ModelDetails has ApiKey field populated from config
-	// if apiKey == "" {
-	// 	log.Errorf("[%s] API key for model %s (backend: %s) is missing for task %s.", tc.Namespace, req.Model, modelDetails.BackendBase, taskId)
-	// 	errMsg := tc.createErrorChunk(taskId, "Internal configuration error: API key missing")
-	// 	select {
-	// 	case tc.sendChan <- errMsg:
-	// 	case <-taskCtx.Done():
-	// 		log.Warnf("[%s] Task %s context done before sending API key error: %v", tc.Namespace, taskId, taskCtx.Err())
-	// 	}
-	// 	return
-	// }
-
 	oaiConfig := openaiclient.NewOpenAIClientConfigBuilder().
 		BaseURL(modelDetails.BackendBase).
 		APIKey("testkey"). // Pass the API key

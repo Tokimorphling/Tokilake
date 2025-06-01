@@ -12,11 +12,10 @@ pub enum Error {
     InvaliApiKey(FastStr),
 
     #[error("error: {0}")]
-    CommonError(#[from] Box<common::error::Error>),
-
-    #[error("error: {0}")]
     MsgError(FastStr),
-    // #[error("{}")]
+
+    #[error("{0}")]
+    MigrateError(FastStr)
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

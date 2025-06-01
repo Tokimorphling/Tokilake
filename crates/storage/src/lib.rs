@@ -7,7 +7,7 @@ use cache::KVCache;
 pub use cache::lru::ClientCache;
 use common::clients::ForwardClient;
 use error::{Error, Result};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{PgPool, migrate::MigrateDatabase, postgres::PgPoolOptions};
 use std::time::Duration;
 use tokio::time::{self, Instant};
 use tracing::{debug, info};
@@ -20,11 +20,21 @@ pub struct Storage<C> {
 
 impl<C: KVCache<ForwardClient>> Storage<C> {
     pub async fn new(database_url: &str) -> Result<Self> {
+        if !sqlx::Postgres::database_exists(database_url).await? {
+            sqlx::Postgres::create_database(database_url).await?;
+        }
+
         debug!("Connecting to database: {}", database_url);
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(database_url)
             .await?;
+
+        sqlx::migrate!("../../migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| Error::MigrateError(e.to_string().into()))?;
+
         let pool_clone = pool.clone();
 
         let storage = Self {
@@ -33,14 +43,7 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
         };
 
         storage.warm_up().await?;
-        // let storage_clone = storage.clone();
-        // common::clients::init_global_forward_clients()
-        //     .await
-        //     .map_err(Box::new)?;
-        // storage.warm_up().await?;
         tokio::spawn(async move { Self::start_check_db_health(pool_clone, 120, 5).await });
-        // tokio::spawn(async move { storage_clone.update_forward_clients(24).await });
-
         Ok(storage)
     }
     pub async fn start_check_db_health(
@@ -86,7 +89,7 @@ mod tests {
             .unwrap_or("postgres://postgres:123456@127.0.0.1:5432/tokilake".into());
 
         PgPoolOptions::new()
-            .max_connections(5) // 测试时不需要太多连接
+            .max_connections(5)
             .connect(&database_url)
             .await
             .expect("Failed to create pool.")

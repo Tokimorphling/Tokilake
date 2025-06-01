@@ -1,4 +1,4 @@
-use crate::pb::control_command::CommandType; // Ensuring this is used as requested
+use crate::pb::control_command::CommandType;
 use crate::pb::{
     Acknowledgement, TokiameMessage, TokilakeMessage, tokiame_message::Payload as TokiamePayload,
     tokilake_message::Payload as TokilakePayload,
@@ -12,7 +12,6 @@ use common::data::ChatCompletionsData;
 use common::proxy::GrpcOriginalPayload;
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
-// use serde::Serialize;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::result::Result;
@@ -63,7 +62,7 @@ async fn process_chunk_for_client(
             TokiameMessage::make_message(request_id.clone(), Some(message_payload));
 
         if response_tx.send(Ok(tokiame_message)).await.is_err() {
-            error!(request_id = %request_id, "Error sending chunk via provided sender. Receiver likely dropped.");
+            error!(request_id = %request_id, "Error sending chunk via provided sender. To user's channel likely dropped.");
             ProcessChunkOutcome::SendFailed
         } else {
             debug!(request_id = %request_id, "Successfully forwarded chunk via provided sender.");
@@ -130,27 +129,31 @@ async fn handle_client_messages(
                             ProcessChunkOutcome::SentSuccessfully => {}
                             ProcessChunkOutcome::SendFailed
                             | ProcessChunkOutcome::SenderUnavailable => {
-                                client_response_dispatcher.remove(&chunk_request_id);
-
-                                let command_payload = TokilakePayload::Command(ControlCommand {
-                                    command_type: CommandType::SHUTDOWN_GRACEFULLY,
-                                    request_id: chunk_request_id.clone(),
-                                    ..Default::default()
-                                });
-                                let command_message = TokilakeMessage::make_message(
-                                    chunk_request_id.clone(),
-                                    Some(command_payload),
-                                );
-
-                                if to_client_tx.send(Ok(command_message)).await.is_err() {
-                                    error!(client = %client_namespace, request_id = %chunk_request_id, "Error sending SHUTDOWN_GRACEFULLY. Client connection likely lost.");
-                                    break; // Exit loop, proceed to cleanup
+                                if !client_response_dispatcher.contains_key(&chunk_request_id) {
+                                    debug!(taskid=%chunk_request_id, "task id has removed");
+                                } else {
+                                    client_response_dispatcher.remove(&chunk_request_id);
                                 }
 
                                 if matches!(outcome, ProcessChunkOutcome::SendFailed) {
                                     info!(client = %client_namespace, request_id = %chunk_request_id, "Removed sender from dispatcher due to send failure (receiver dropped) and sent SHUTDOWN_GRACEFULLY.");
+                                    let command_payload =
+                                        TokilakePayload::Command(ControlCommand {
+                                            command_type: CommandType::SHUTDOWN_GRACEFULLY,
+                                            request_id: chunk_request_id.clone(),
+                                            ..Default::default()
+                                        });
+                                    let command_message = TokilakeMessage::make_message(
+                                        chunk_request_id.clone(),
+                                        Some(command_payload),
+                                    );
+
+                                    if to_client_tx.send(Ok(command_message)).await.is_err() {
+                                        error!(client = %client_namespace, request_id = %chunk_request_id, "Error sending SHUTDOWN_GRACEFULLY. Client connection likely lost.");
+                                        break; // Exit loop, proceed to cleanup
+                                    }
                                 } else {
-                                    warn!(client = %client_namespace, request_id = %chunk_request_id, "Sender unavailable for chunk (request ID not in dispatcher). Sent SHUTDOWN_GRACEFULLY.");
+                                    warn!(client = %client_namespace, request_id = %chunk_request_id, "Sender unavailable for chunk (request ID not in dispatcher). Task may be stopped");
                                 }
                             }
                         }
@@ -201,7 +204,7 @@ async fn handle_client_messages(
         warn!(client = %client_namespace, "Attempted to remove client from global map, but it was not found (might have been removed concurrently or due to registration issue).");
     }
 
-    let senders_to_notify: Vec<(_, _)> = client_response_dispatcher
+    let senders_to_notify: Vec<_> = client_response_dispatcher
         .iter()
         .map(|entry| (entry.key().clone(), entry.value().clone())) // Clones FastStr and UnboundedSender (cheap)
         .collect();
@@ -294,8 +297,7 @@ impl InferenceService for InferenceServer {
 
         if let Err(e) = client_comms.to_client_tx.send(Ok(message_to_send)).await {
             let error_message = format!(
-                "Failed to send request to client '{namespace}' for task_id [{task_id}]: \
-                 {e:?}"
+                "Failed to send request to client '{namespace}' for task_id [{task_id}]: {e:?}"
             );
             error!("{}", error_message);
             client_comms.response_dispatcher.remove(&task_id);

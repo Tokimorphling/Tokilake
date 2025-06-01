@@ -9,7 +9,7 @@ members = [
     "crates/api-server",
     "crates/common",
     "crates/inference-server",
-    "crates/storage"
+    "crates/storage",
 ]
 
 [workspace.dependencies]
@@ -68,12 +68,9 @@ faststr = { git = "https://github.com/volo-rs/faststr.git" }
 name = "tokilake"
 path = "src/main.rs"
 
-[features]
-tokio_console = []
 
 [profile.release]
-debug = true
-opt-level = 'z'
+opt-level = 3
 strip = true
 lto = "thin"
 panic = 'abort'

@@ -68,9 +68,9 @@ pub fn private_chat_completion_router() -> Router {
 async fn create_sse_response<S, T>(
     input: S,
     model_name: FastStr,
-) -> Sse<impl Stream<Item = Result<Event>> + use<S, T>>
+) -> Sse<impl Stream<Item = Result<Event>>>
 where
-    S: Stream<Item = T> + 'static,
+    S: Stream<Item = T>,
     T: Into<ResEvent>,
 {
     let comp_id = generate_completion_id();

@@ -9,8 +9,6 @@ pub enum Error {
     #[error("Invalid Requst Body: {0}")]
     InvalidRequestBody(#[from] serde_json::Error),
 
-    #[error("Error: {0}")]
-    Common(#[from] Box<common::error::Error>),
 
     #[error("invalid model: {0}")]
     InvalidModel(FastStr),
