@@ -2,391 +2,301 @@ package rpc
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
+	"crypto/tls"
 	"fmt"
-	"io"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "tokiame/internal/pb"
-	"tokiame/internal/utils"
 	"tokiame/pkg/config"
 	"tokiame/pkg/log"
-	openaiclient "tokiame/pkg/openai_client"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/resolver/dns"
-	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+const (
+	defaultSendChannelBuffer = 10240
+	defaultHeartbeatInterval = 120 * time.Second
 )
 
 type TokiameClient struct {
-	Namespace  string
-	conn       *grpc.ClientConn
-	stream     pb.TokilakeCoordinatorService_EstablishTokiameLinkClient
-	mainCtx    context.Context
-	serverAddr string
-	sendChan   chan *pb.TokiameMessage
-	wg         sync.WaitGroup
-	cancelCtx  context.CancelFunc
-	tasksMu    sync.Mutex
-	tasks      map[string]context.CancelFunc
-	conf       *config.Manager
+	Namespace      string
+	conn           *grpc.ClientConn
+	stream         pb.TokilakeCoordinatorService_EstablishTokiameLinkClient
+	mainCtx        context.Context
+	serverAddr     string
+	sendChan       chan *pb.TokiameMessage
+	wg             sync.WaitGroup
+	cancelStream   context.CancelFunc
+	tasksMu        sync.Mutex
+	tasks          map[string]context.CancelFunc
+	conf           *config.Manager
+	retryPolicy    *RetryPolicy
+	isShuttingDown atomic.Bool
 }
 
 func NewTokiameClient(ctx context.Context, address string, namespace string, conf *config.Manager) *TokiameClient {
-	return &TokiameClient{
-		Namespace:  namespace,
-		mainCtx:    ctx,
-		serverAddr: address,
-		conf:       conf,
-		sendChan:   make(chan *pb.TokiameMessage, 10240), // Buffered channel
-		tasks:      make(map[string]context.CancelFunc),
+	tc := &TokiameClient{
+		Namespace:   namespace,
+		mainCtx:     ctx,
+		serverAddr:  address,
+		conf:        conf,
+		sendChan:    make(chan *pb.TokiameMessage, defaultSendChannelBuffer),
+		tasks:       make(map[string]context.CancelFunc),
+		retryPolicy: NewRetryPolicy(1*time.Second, 30*time.Second, 2.0), // Example policy
 	}
+	tc.isShuttingDown.Store(false)
+	return tc
+}
+
+// Run starts the client, including connection management and automatic reconnection.
+func (tc *TokiameClient) Run() error {
+	log.Infof("[%s] TokiameClient Run loop starting.", tc.Namespace)
+	tc.StartHeartbeat(defaultHeartbeatInterval) // Heartbeat is a client-lifetime goroutine
+
+	for {
+		if tc.isShuttingDown.Load() {
+			log.Infof("[%s] Client is marked as shutting down, Run loop will not attempt new connections.", tc.Namespace)
+			break
+		}
+
+		log.Infof("[%s] Attempting to establish and maintain stream connection...", tc.Namespace)
+
+		streamErr := tc.establishAndMaintainStream()
+
+		if streamErr == nil {
+			log.Infof("[%s] establishAndMaintainStream exited gracefully (likely due to main context cancellation). Exiting Run loop.", tc.Namespace)
+			break
+		}
+
+		log.Warnf("[%s] Stream session ended with error: %v. Will attempt to reconnect.", tc.Namespace, streamErr)
+
+		if tc.isShuttingDown.Load() {
+			log.Infof("[%s] Client is marked as shutting down during retry sequence. Aborting reconnection.", tc.Namespace)
+			break
+		}
+
+		retryInterval := tc.retryPolicy.NextInterval()
+		log.Infof("[%s] Waiting %v before next reconnection attempt.", tc.Namespace, retryInterval)
+
+		select {
+		case <-time.After(retryInterval):
+			// Continue to the next iteration of the loop to retry connection.
+		case <-tc.mainCtx.Done():
+			log.Infof("[%s] Main context cancelled while waiting for retry. Exiting Run loop.", tc.Namespace)
+			tc.isShuttingDown.Store(true) // Ensure state is consistent
+			// The loop condition 'tc.isShuttingDown.Load()' will handle exiting the for-loop.
+			// Or we can 'break' here directly.
+			return nil // Exit Run function
+		}
+	}
+
+	log.Infof("[%s] TokiameClient Run loop finished.", tc.Namespace)
+	return nil
+}
+
+// establishAndMaintainStream handles a single stream session: connect, start sender/receiver, and wait.
+// Returns nil if tc.mainCtx is done (graceful shutdown of this stream attempt due to client shutdown).
+// Returns an error if the stream session ends for other reasons (requiring Run loop to reconnect).
+func (tc *TokiameClient) establishAndMaintainStream() error {
+	// streamCtx is specific to this stream session, derived from the main client context.
+	streamCtx, streamCancel := context.WithCancel(tc.mainCtx)
+	// IMPORTANT: defer streamCancel AFTER tc.cancelStream is set, and handle potential nil if Connect fails early.
+	// tc.cancelStream will be set IF Connect succeeds and before sender/receiver start.
+
+	// Attempt to connect. This method will set tc.conn and tc.stream.
+	if err := tc.Connect(streamCtx, tc.serverAddr); err != nil {
+		streamCancel() // Cancel the context we created if connect failed.
+		return fmt.Errorf("connection attempt failed: %w", err)
+	}
+	// If Connect succeeded, tc.stream is now active for this streamCtx.
+	tc.cancelStream = streamCancel // Store the cancel func for THIS specific stream session.
+	defer func() {
+		// This defer ensures that if establishAndMaintainStream exits, the streamCtx is cancelled.
+		// This is crucial for stopping the sender and receiver of this session.
+		log.Infof("[%s] establishAndMaintainStream exiting, ensuring streamCtx is cancelled.", tc.Namespace)
+		if tc.cancelStream != nil { // tc.cancelStream is this function's streamCancel
+			tc.cancelStream()
+		}
+	}()
+
+	log.Infof("[%s] Successfully connected and established new stream.", tc.Namespace)
+	tc.retryPolicy.Reset() // Reset retry backoff on successful connection
+
+	// streamSessionWg is for the sender and receiver of THIS specific stream session.
+	var streamSessionWg sync.WaitGroup
+	streamSessionWg.Add(2)
+
+	go func() {
+		defer streamSessionWg.Done()
+		tc.sender(streamCtx) // Pass streamCtx
+	}()
+	go func() {
+		defer streamSessionWg.Done()
+		tc.receiver(streamCtx) // Pass streamCtx
+	}()
+
+	tc.SendRegistration()
+
+	var errToReturn error
+
+	select {
+	case <-streamCtx.Done():
+		errToReturn = fmt.Errorf("stream context finished: %w", streamCtx.Err())
+		log.Infof("[%s] %s", tc.Namespace, errToReturn.Error())
+	case <-tc.mainCtx.Done():
+		log.Infof("[%s] Main context done during active stream session. This stream session will now end.", tc.Namespace)
+
+		errToReturn = nil
+	}
+
+	log.Infof("[%s] Waiting for current stream's sender and receiver to finish...", tc.Namespace)
+	streamSessionWg.Wait()
+	log.Infof("[%s] Current stream's sender and receiver finished.", tc.Namespace)
+
+	tc.cleanupCurrentStream() // Clean up tc.stream, tc.cancelStream for this ended session.
+	return errToReturn
 }
 
 func (tc *TokiameClient) Connect(ctx context.Context, serverAddress string) error {
-	// creds := credentials.NewClientTLSFromCert(nil, "")
-	creds := insecure.NewCredentials()
-	var err error
-	tc.conn, err = grpc.NewClient(serverAddress, grpc.WithTransportCredentials(creds))
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
-	}
-	log.Infof("[%s] Connected to Tokilake server at %s", tc.Namespace, serverAddress)
 
-	client := pb.NewTokilakeCoordinatorServiceClient(tc.conn)
-	streamCtx, streamCancel := context.WithCancel(ctx) // Separate context for the stream, can be cancelled by main ctx
-	tc.cancelCtx = streamCancel                        // Store cancel func to call on shutdown
-
-	tc.stream, err = client.EstablishTokiameLink(streamCtx)
-	if err != nil {
+	if tc.conn != nil {
+		log.Warnf("[%s] Connect called while a connection already exists. Closing old one.", tc.Namespace)
 		tc.conn.Close()
-		return fmt.Errorf("could not establish link: %v", err)
+		tc.conn = nil
 	}
-	log.Infof("[%s] Established bi-directional stream with Tokilake", tc.Namespace)
+
+	dialTarget, credOpt, isTLS := tc.prepareDialConfig(serverAddress)
+	var dialOpts []grpc.DialOption
+	if credOpt != nil {
+		dialOpts = append(dialOpts, credOpt)
+	}
+	conn, err := grpc.NewClient(dialTarget, dialOpts...)
+
+	// conn, err := grpc.NewClient(serverAddress, grpc.WithTransportCredentials(creds))
+	if err != nil {
+		tc.conn = nil
+		connectionType := "insecure"
+		if isTLS {
+			connectionType = "TLS"
+		}
+		return fmt.Errorf("grpc.NewClient to target '%s' (%s) failed: %w", dialTarget, connectionType, err)
+	}
+
+	tc.conn = conn
+	log.Infof("[%s] gRPC client connected to %s", tc.Namespace, serverAddress)
+
+	clientService := pb.NewTokilakeCoordinatorServiceClient(tc.conn)
+	stream, err := clientService.EstablishTokiameLink(ctx)
+	if err != nil {
+		if tc.conn != nil {
+			tc.conn.Close()
+			tc.conn = nil
+		}
+		return fmt.Errorf("EstablishTokiameLink failed: %w", err)
+	}
+
+	tc.stream = stream
+
+	connectionType := "insecure"
+	if isTLS {
+		connectionType = "TLS"
+	}
+	log.Infof("[%s] Successfully connected to target '%s' and established bi-directional stream (%s)",
+		tc.Namespace, dialTarget, connectionType)
+
 	return nil
 }
 
 func (tc *TokiameClient) Close() {
-	if tc.cancelCtx != nil {
-		tc.cancelCtx() // Cancel stream context
+	log.Infof("[%s] Initiating TokiameClient FULL shutdown...", tc.Namespace)
+
+	tc.isShuttingDown.Store(true)
+
+	if tc.cancelStream != nil {
+		log.Infof("[%s] Close: Cancelling current stream context.", tc.Namespace)
+		tc.cancelStream()
 	}
-	close(tc.sendChan) // Signal sender goroutine to stop
-	tc.wg.Wait()       // Wait for goroutines to finish
+
+	tc.tasksMu.Lock()
+	activeTaskCount := len(tc.tasks)
+	if activeTaskCount > 0 {
+		log.Infof("[%s] Close: Cancelling %d active task(s)...", tc.Namespace, activeTaskCount)
+		for taskId, cancel := range tc.tasks {
+			log.Debugf("[%s] Close: Cancelling task %s.", tc.Namespace, taskId)
+			cancel()
+
+		}
+	}
+	tc.tasksMu.Unlock()
+
+	log.Infof("[%s] Close: Waiting for long-lived goroutines (e.g., heartbeat) to finish...", tc.Namespace)
+	tc.wg.Wait()
+	log.Infof("[%s] Close: All long-lived goroutines finished.", tc.Namespace)
+
+	if tc.sendChan != nil {
+
+		close(tc.sendChan)
+		log.Infof("[%s] Close: sendChan closed.", tc.Namespace)
+		tc.sendChan = nil // Avoid reuse
+	}
+
+	// 6. Clean up the gRPC connection and stream resources.
+	tc.cleanupFullConnection()
+	log.Infof("[%s] TokiameClient FULL shutdown complete.", tc.Namespace)
+}
+
+// cleanupCurrentStream resets resources related to the just-ended stream session.
+// It does NOT close tc.conn.
+func (tc *TokiameClient) cleanupCurrentStream() {
+	log.Debugf("[%s] Cleaning up resources for the just-ended stream session.", tc.Namespace)
 	if tc.stream != nil {
-		// Closing the send direction of the stream. Recv will eventually error or return EOF.
-		if err := tc.stream.CloseSend(); err != nil {
-			log.Infof("[%s] Error closing send stream: %v", tc.Namespace, err)
-		}
+		// tc.stream.CloseSend()
+		tc.stream = nil
 	}
+	tc.cancelStream = nil
+}
+
+func (tc *TokiameClient) cleanupFullConnection() {
+	log.Debugf("[%s] Cleaning up full gRPC connection and stream state.", tc.Namespace)
+	tc.cleanupCurrentStream()
 	if tc.conn != nil {
-		tc.conn.Close()
-		log.Infof("[%s] Connection closed.", tc.Namespace)
+		log.Infof("[%s] Closing main gRPC connection to %s.", tc.Namespace, tc.serverAddr)
+		if err := tc.conn.Close(); err != nil {
+			log.Errorf("[%s] Error closing main gRPC connection: %v", tc.Namespace, err)
+		}
+		tc.conn = nil
 	}
 }
 
-// // Goroutine for sending messages to Tokilake
-func (tc *TokiameClient) sender() {
-	defer tc.wg.Done()
-	log.Infof("[%s] Sender goroutine started", tc.Namespace)
-	for msg := range tc.sendChan {
-		if tc.stream == nil {
-			log.Infof("[%s] Sender: Stream is nil, cannot send message", tc.Namespace)
-			continue
+func (tc *TokiameClient) prepareDialConfig(serverAddress string) (dialTarget string, credOption grpc.DialOption, isTLS bool) {
+	dialTarget = serverAddress
+	isTLS = false // Default to insecure
 
+	if strings.HasPrefix(serverAddress, "grpcs://") {
+		dialTarget = strings.TrimPrefix(serverAddress, "grpcs://")
+		log.Infof("[%s] TLS scheme detected for address '%s'. Dial Target will be: '%s'", tc.Namespace, serverAddress, dialTarget)
+
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
 		}
-		if err := tc.stream.Send(msg); err != nil {
-			log.Infof("[%s] Error sending message via stream: %v", tc.Namespace, err)
-			// If send fails, the stream might be broken. Consider breaking the loop or re-establishing.
-			// For simplicity, we'll just log and continue, but this might lead to dropped messages.
-			// A more robust implementation would signal the main loop to reconnect.
-			return // Exit sender if stream is broken
-		}
-		if msg.GetRegistration() != nil {
-			log.Infof("[%s] Sent registration details", tc.Namespace)
-		} else if msg.GetHeartbeat() != nil {
-			// log.Infof("[%s] Sent heartbeat", tc.Namespace) // Can be noisy
+		credOption = grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))
+		isTLS = true
+	} else {
+		if strings.HasPrefix(serverAddress, "grpc://") {
+			dialTarget = strings.TrimPrefix(serverAddress, "grpc://")
+			log.Infof("[%s] Insecure 'grpc://' scheme detected for address '%s'. Dial Target will be: '%s'", tc.Namespace, serverAddress, dialTarget)
 		} else {
-			log.Infof("[%s] Sent a message to Tokilake", tc.Namespace)
+			// No "grpcs://" or "grpc://" scheme, assume the address is the target for an insecure connection.
+			log.Infof("[%s] No 'grpcs://' scheme in address '%s'. Assuming insecure connection. Dial Target: '%s'", tc.Namespace, serverAddress, dialTarget)
 		}
+		credOption = grpc.WithTransportCredentials(insecure.NewCredentials())
+		// isTLS remains false
 	}
-	log.Infof("[%s] Sender goroutine stopped", tc.Namespace)
-}
-
-// Goroutine for receiving messages from Tokilake
-func (tc *TokiameClient) receiver() {
-	defer tc.wg.Done()
-	log.Infof("[%s] Receiver goroutine started", tc.Namespace)
-	for {
-		if tc.stream == nil {
-			log.Infof("[%s] Receiver: Stream is nil, cannot receive.", tc.Namespace)
-			time.Sleep(1 * time.Second) // Avoid busy loop if stream is not yet established or broken
-
-			continue
-		}
-		in, err := tc.stream.Recv()
-		if err == io.EOF {
-			log.Infof("[%s] Stream closed by Tokilake (EOF)", tc.Namespace)
-			tc.stream = nil
-			time.Sleep(3 * time.Second)
-			return // Stream ended
-		}
-		if err != nil {
-			// Check if the error is due to context cancellation (expected on shutdown)
-			select {
-			case <-tc.stream.Context().Done():
-				log.Infof("[%s] Stream context done, receiver stopping: %v", tc.Namespace, tc.stream.Context().Err())
-			default:
-				log.Infof("[%s] Error receiving from stream: %v", tc.Namespace, err)
-			}
-			return // Error receiving
-		}
-
-		if ack := in.GetAck(); ack != nil {
-			log.Infof("[%s] Received Ack: Success=%t, Details='%s'", tc.Namespace, ack.Success, ack.Details)
-		} else if req := in.GetChatcompletionRequest(); req != nil {
-			log.Infof("[%s] Received TaskInstruction for request_id: %s, model: %s", in.TaskId, tc.Namespace, req.Model)
-			taskCtx, taskCancel := context.WithCancel(context.Background())
-			tc.tasksMu.Lock()
-			tc.tasks[in.TaskId] = taskCancel
-			tc.tasksMu.Unlock()
-			go tc.StreamTaskProcessing(taskCtx, req, in.TaskId)
-		} else if cmd := in.GetCommand(); cmd != nil {
-			log.Infof("[%s] Received Command: %s", tc.Namespace, pb.ControlCommand_CommandType_name[int32(cmd.CommandType)])
-			if cmd.CommandType == pb.ControlCommand_SHUTDOWN_GRACEFULLY {
-				log.Infof("[%s] Received shutdown command, initiating stop task %s.", tc.Namespace, in.TaskId)
-				tc.tasksMu.Lock()
-				if cancel, ok := tc.tasks[in.TaskId]; ok {
-					cancel()
-					delete(tc.tasks, in.TaskId)
-				} else {
-					log.Debugf("[%s] Task %s not found in tasks map, already finished", tc.Namespace, in.TaskId)
-				}
-				tc.tasksMu.Unlock()
-			} else if cmd.CommandType == pb.ControlCommand_MODELS {
-				log.Infof("[%s] Received models command", tc.Namespace)
-				tc.ProcessModels(context.Background(), in.TaskId)
-
-			}
-		} else {
-			log.Infof("[%s] Received unknown message type from Tokilake", tc.Namespace)
-		}
-	}
-}
-
-func (tc *TokiameClient) SupportedModels() *map[string]*config.ModelDetails {
-	models := tc.conf.Get().SupportedModels
-	modelsMp := utils.SliceToMap(models, func(model *config.ModelDetails) string {
-		return model.Id
-	})
-	return &modelsMp
-}
-
-func (tc *TokiameClient) StreamTaskProcessing(ctx context.Context, req *pb.ChatCompletionRequest, taskId string) {
-	log.Debugf("[%s] process stream task...", tc.Namespace)
-
-	jsonReq, err := json.Marshal(req)
-	if err != nil {
-		log.Error("Serialization failed, maybe error format")
-		return
-	}
-	log.Debugf("[%s] request: %s", tc.Namespace, string(jsonReq))
-
-	if _, ok := (*tc.SupportedModels())[req.Model]; !ok {
-		log.Errorf("[%s] not registerd", req.Model)
-		return
-	}
-
-	innerModel := (*tc.SupportedModels())[req.Model]
-	baseURL := innerModel.BackendBase
-	messages := req.Messages
-
-	var temp float32 = 0.7
-	if req.Temperature != nil {
-		temp = *req.Temperature
-	}
-	var topp float32 = 0.95
-	if req.TopP != nil {
-		topp = *req.TopP
-	}
-
-	config := openaiclient.NewOpenAIClientConfigBuilder().
-		BaseURL(baseURL).
-		Model(req.Model).
-		Messages(messages).
-		Tempratrue(temp).
-		Topp(topp).
-		Build()
-	client, err := openaiclient.NewOpenAIClient(config)
-	if err != nil {
-		log.Errorf("Error creating clinet: %v", err)
-	}
-	stream, err := client.CreateChatCompletionStream(context.Background())
-
-	if err != nil {
-		log.Errorf("Error creating stream: %v", err)
-		return
-	}
-
-	numChunks := 0
-	for {
-		resp, streamErr := stream.Recv()
-		if errors.Is(streamErr, io.EOF) {
-			fmt.Println("\nStream finished.")
-			break
-		}
-		if streamErr != nil {
-			fmt.Printf("\nStream error: %v\n", streamErr)
-			break
-		}
-		chunk := resp.Choices[0].Delta.Content
-		log.Debugf("Recv chunk: %s", chunk)
-		message := mapChunkToPayload(chunk, taskId)
-
-		select {
-		case <-ctx.Done():
-			log.Infof("[%s] Context cancelled before sending stream chunk %d for %s", tc.Namespace, numChunks, taskId)
-			return // Exit if context is cancelled
-		case tc.sendChan <- message:
-			numChunks += 1
-			log.Infof("[%s] Sent stream chunk %d for task %s", tc.Namespace, numChunks, taskId)
-		case <-tc.stream.Context().Done(): // Check if stream context is cancelled
-			log.Infof("[%s] Stream context cancelled before sending stream chunk %d for %s", tc.Namespace, numChunks, taskId)
-			return // Exit if stream is done
-		default:
-			log.Infof("[%s] sendChan is full or closed, could not send stream chunk %d for %s", tc.Namespace, numChunks, taskId)
-			// Depending on requirements, you might want to return or implement a retry mechanism.
-			return // Exit if cannot send to prevent deadlock or excessive logging
-		}
-	}
-	fc := finalChunk(taskId)
-	tc.sendChan <- fc
-	log.Infof("[%s] Finished simulating STREAM processing for task %s", tc.Namespace, taskId)
-}
-
-func (tc *TokiameClient) SendRegistration() {
-
-	regDetails := &pb.RegistrationDetails{
-		TokiameNamespace: tc.Namespace,
-	}
-	msg := &pb.TokiameMessage{
-		TokiameId: tc.Namespace,
-		Payload: &pb.TokiameMessage_Registration{
-			Registration: regDetails,
-		},
-	}
-	tc.sendChan <- msg
-}
-
-func (tc *TokiameClient) ProcessModels(ctx context.Context, taskid string) {
-	log.Debugf("Processing all models: [%s]", taskid)
-	models := tc.conf.Get().SupportedModels
-	log.Debug(models)
-
-	supportedModels := make([]*pb.ModelDetails, 0)
-	for _, model := range models {
-		supportedModels = append(supportedModels, &pb.ModelDetails{
-			Id:            model.Id,
-			Description:   model.Description,
-			Type:          model.Type,
-			Capabilities:  model.Capabilities,
-			BackendEngine: model.BackendEngine,
-			Status:        model.Status,
-		})
-	}
-
-	payload := &pb.TokiameMessage_Models{
-		Models: &pb.Models{
-			SupportedModels: supportedModels,
-		},
-	}
-
-	message := &pb.TokiameMessage{
-		TokiameId: taskid,
-		Payload:   payload,
-	}
-	tc.sendChan <- message
-}
-
-func (tc *TokiameClient) StartHeartbeat(ctx context.Context, interval time.Duration) {
-	tc.wg.Add(1)
-	go func() {
-		defer tc.wg.Done()
-		log.Infof("[%s] Heartbeat goroutine started (interval: %s)", tc.Namespace, interval)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				heartbeatPayload := &pb.Heartbeat{
-					Timestamp:     timestamppb.Now(),
-					CurrentStatus: pb.ServingStatus_SERVING_STATUS_SERVING, // Example status
-				}
-				msg := &pb.TokiameMessage{
-					TokiameId: tc.Namespace,
-					Payload: &pb.TokiameMessage_Heartbeat{
-						Heartbeat: heartbeatPayload,
-					},
-				}
-				// Non-blocking send for heartbeat, ok to drop if channel is full
-				select {
-				case tc.sendChan <- msg:
-					log.Debugf("[%s] Heartbeat sent.", tc.Namespace)
-				default:
-					log.Infof("[%s] Heartbeat sendChan full, skipping heartbeat.", tc.Namespace)
-				}
-			case <-ctx.Done(): // Main context cancelled
-				log.Infof("[%s] Heartbeat goroutine stopping due to context cancellation.", tc.Namespace)
-				return
-			case <-tc.stream.Context().Done(): // Stream specific context cancelled
-				log.Infof("[%s] Heartbeat goroutine stopping due to stream context cancellation.", tc.Namespace)
-				return
-			}
-		}
-	}()
-}
-
-func (tc *TokiameClient) Run() error {
-	if err := tc.Connect(tc.mainCtx, tc.serverAddr); err != nil {
-		return err
-	}
-
-	tc.wg.Add(2) // For sender and receiver goroutines
-	go tc.sender()
-	go tc.receiver()
-
-	tc.SendRegistration()
-
-	tc.StartHeartbeat(tc.mainCtx, 120*time.Second) // Send heartbeat every 120 seconds
-
-	// Wait for context cancellation (e.g. Ctrl+C)
-	<-tc.mainCtx.Done()
-	log.Infof("[%s] Main context cancelled, shutting down client...", tc.Namespace)
-	return nil
-}
-
-func mapChunkToPayload(chunk string, taskId string) *pb.TokiameMessage {
-	choice := pb.ChunkChoice{Delta: &pb.ChatMessageDelta{Content: &chunk}}
-	message := pb.TokiameMessage{TokiameId: taskId, Payload: &pb.TokiameMessage_Chunk{
-		Chunk: &pb.StreamedInferenceChunk{
-			RequestId: taskId,
-			Chunk: &pb.ChatCompletionChunk{
-				Choices: []*pb.ChunkChoice{&choice}}}},
-	}
-	return &message
-}
-
-func finalChunk(taskId string) *pb.TokiameMessage {
-	stop := "stop"
-	final := pb.ChunkChoice{FinishReason: &stop}
-	message := pb.TokiameMessage{TokiameId: taskId, Payload: &pb.TokiameMessage_Chunk{
-		Chunk: &pb.StreamedInferenceChunk{
-			RequestId: taskId,
-			Chunk: &pb.ChatCompletionChunk{
-				Choices: []*pb.ChunkChoice{&final}}}},
-	}
-	return &message
+	return dialTarget, credOption, isTLS
 }

@@ -52,11 +52,16 @@ func main() {
 	}()
 
 	log.Infof("Starting Tokiame client: %s", namespace)
-	err = client.Run()
-	if err != nil {
-		log.Fatalf("Client run failed: %v", err)
-	}
 
+	go func() {
+		if err := client.Run(); err != nil {
+			log.Errorf("tokiame client run error: %v", err)
+
+		}
+		log.Infof("TokiameClient Run returned.")
+	}()
+
+	<-mainCtx.Done()
 	log.Infof("Client [%s] performing final cleanup...", namespace)
 	client.Close() // Ensure all resources are released
 	log.Infof("Client [%s] shut down gracefully.", namespace)
