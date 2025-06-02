@@ -121,6 +121,10 @@ async fn handle_client_messages(
                             client_response_dispatcher
                                 .get(&chunk_request_id)
                                 .map(|entry| entry.value().clone());
+                        if maybe_sender_for_chunk.is_none() {
+                            warn!(client = %client_namespace, request_id = %chunk_request_id, "Sender unavailable for chunk (request ID not in dispatcher). Task may be stopped");
+                            continue;
+                        }
 
                         let outcome =
                             process_chunk_for_client(stream_chunk, maybe_sender_for_chunk).await;
@@ -130,7 +134,8 @@ async fn handle_client_messages(
                             ProcessChunkOutcome::SendFailed
                             | ProcessChunkOutcome::SenderUnavailable => {
                                 if !client_response_dispatcher.contains_key(&chunk_request_id) {
-                                    debug!(taskid=%chunk_request_id, "task id has removed");
+                                    debug!(taskid=%chunk_request_id, "task id has finished");
+                                    continue;
                                 } else {
                                     client_response_dispatcher.remove(&chunk_request_id);
                                 }
@@ -152,9 +157,7 @@ async fn handle_client_messages(
                                         error!(client = %client_namespace, request_id = %chunk_request_id, "Error sending SHUTDOWN_GRACEFULLY. Client connection likely lost.");
                                         break; // Exit loop, proceed to cleanup
                                     }
-                                } else {
-                                    warn!(client = %client_namespace, request_id = %chunk_request_id, "Sender unavailable for chunk (request ID not in dispatcher). Task may be stopped");
-                                }
+                                } 
                             }
                         }
                     }
@@ -410,7 +413,7 @@ impl TokilakeCoordinatorService for InferenceServer {
                 Status::invalid_argument("First message was not a valid Registration message.")
             })?;
 
-        let (to_client_tx, to_client_rx) = mpsc::channel(1024);
+        let (to_client_tx, to_client_rx) = mpsc::channel(10240);
 
         let client_comms = ClientComms {
             to_client_tx:         to_client_tx.clone(), // Cheap UnboundedSender clone

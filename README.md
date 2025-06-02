@@ -1,280 +1,258 @@
-# Tokilake
+# Tokilake: Your Private, Distributed, Self-hosted openrouter 🚀
 
-**Turn Your Local GPU Clusters into a Private, Globally Distributed AI Cloud**
+[](https://www.google.com/search?q=%5Bhttps://opensource.org/licenses/MIT%5D\(https://opensource.org/licenses/MIT\))
+**Turn Your Local GPU Clusters into a Private, Globally Distributed AI Cloud.**
+[](https://www.google.com/search?q=CONTRIBUTING.md)
 
-[](https://opensource.org/licenses/MIT)
+Tokilake empowers you to seamlessly access and manage your distributed, privately-owned GPU resources for Large Language Model (LLM) inference. It functions like a commercial cloud service but utilizes **your hardware** under **your complete control**.
 
-Tokilake empowers you to seamlessly access and manage your distributed, privately-owned GPU resources for Large Language Model (LLM) inference, just like a commercial cloud service, but under your complete control. Support for Text-to-Speech (TTS) models is planned for the future.
+Unlock your GPU potential, even if your hardware is behind NATs and firewalls. Tokilake provides a unified, accessible interface to your private AI resources.
 
-## The Challenge: Unlocking Private GPU Potential
+## ✨ Why Tokilake?
 
-The rise of powerful open-source LLMs is exciting. However, leveraging your own or your friends' GPU hardware often comes with hurdles:
+  * 🌍 **Unlock Hidden GPUs:** Access GPUs behind NAT/Firewalls. Tokiame clients make outbound connections, so your GPU servers don't need public IPs.
+  * 🛡️ **Private & Secure:** You own the hardware and control access. Provider authentication between Tokiame and Tokilake is designed to be secure (details on secret management in Tokiame documentation).
+  * 🏢 **Unified API Gateway:** A single, OpenAI-compatible endpoint for all your distributed models.
+  * 🔗 **Flexible Tokiame Deployment:** Deploy Tokiame agents directly on GPU machines or centrally within your intranet to manage multiple local inference servers.
+  * 📉 **Low Latency, High Availability:** Distributed Tokilake server nodes connect users to the nearest resource, with resilience built-in (requires resilient DB).
+  * 🚄 **Efficient & Optimized:** Uses gRPC for fast Tokilake-Tokiame communication, focused on LLMs (TTS planned).
+  * 🧩 **Simpler Than Orchestrators:** A more streamlined solution for LLM inference access compared to full Kubernetes setups.
+  * 🤝 **Share with Your Group:** Easily pool resources within a trusted group.
 
-  * **Remote Access Nightmares:** Running inference servers (like llama.cpp, SGLang, vLLM) on home or office machines is common. But accessing them securely and conveniently from anywhere, especially when they lack a public IP, is a major pain point. Exposing public IPs directly is a security risk.
-  * **Stranded & Underutilized GPUs:** Significant GPU power often sits idle behind NATs and firewalls, inaccessible for your projects or to share within a trusted group.
-  * **Managing Multiple Endpoints:** Juggling different IP addresses and ports for various models running on disparate machines becomes cumbersome.
+## ⚙️ How It Works: Tokilake & Tokiame
 
-## Our Solution: Tokilake & Tokiame
+Tokilake uses a two-component system:
 
-Tokilake provides a robust, two-component system to create your own private AI inference cloud:
-
-  * **Tokilake Server:** A smart reverse proxy that acts as a unified API gateway to all your registered GPU resources. Crucially, Tokilake servers can be deployed as a distributed network, sharing state via a central PostgreSQL database. This allows users and GPU providers to connect to the nearest Tokilake node for optimal latency and high availability.
-  * **Tokiame Client:** A lightweight agent you deploy on your GPU machines. Tokiame securely connects *outbound* to a Tokilake instance (so **no public IP is needed for your GPUs**), registers the available models, and forwards inference tasks from Tokilake.
-
-Think of Tokilake as your personal, self-hostable OpenRouter, designed for your private GPU fleet.
-
-## Key Features
-
-  * ✨ **Access GPUs Behind NAT/Firewalls:** Tokiame's outbound connection model means your GPU machines don't need a public IP or complex port forwarding.
-  * 🌐 **Distributed Tokilake Network:** Deploy multiple Tokilake server nodes globally. They share configuration (like registered Tokiame clients and their namespaces) via a common PostgreSQL database cluster.
-      * 📉 **Reduced Latency:** Users and GPU providers connect to the nearest Tokilake node.
-      * 🛡️ **Enhanced Availability:** The system remains operational even if individual Tokilake nodes fail (requires a resilient database setup).
-      * 🔑 **Centralized & Secure Configuration:** Tokiame registrations and provider namespaces are stored in the database. **Importantly, for API secrets, Tokilake stores only their cryptographically secure hashes, not the raw secrets themselves, enhancing security.**
-  * 🚀 **Optimized for LLMs (TTS Planned):** Currently focused on delivering a smooth experience for Chat models. Support for Text-to-Speech (TTS) models will be added in the future when more powerful open-source options become available.
-  * 🚄 **Efficient gRPC Communication:** Tokilake and Tokiame communicate via gRPC, minimizing network overhead and latency compared to JSON/HTTP.
-  * 🧩 **Flexible Deployment:** Host Tokilake on a simple VPS or a powerful server, while Tokiame clients run on your diverse GPU machines.
-  * 🔒 **Dynamic & Secure GPU Registration:** Tokiame clients register with custom `namespaces` (provider names) and an optional `api_secret`. The Tokilake network verifies these credentials by comparing a hash of the provided secret against the securely stored hash in the database, ensuring only authorized access to your valuable GPU resources.
-
-## Why Tokilake?
-
-Compared to other solutions, Tokilake offers a unique blend of benefits for creating a *private, distributed AI inference fabric*:
-
-  * **True Private Cloud Experience:** Unlike public GPU clouds, you use *your own* hardware. Unlike simple remote access tools (VPNs, SSH), Tokilake provides a managed, unified API endpoint.
-  * **Unlocks "Hidden" GPUs:** The "no public IP required" feature is a game-changer for leveraging hardware that would otherwise be inaccessible.
-  * **Scalability & Resilience by Design:** The distributed Tokilake server architecture with a PostgreSQL backend is built for growth and fault tolerance, mimicking enterprise-grade systems.
-  * **Control & Ownership:** You control the infrastructure, the data (if any passes through the proxy), and the access policies.
-  * **Simpler than Full Cluster Orchestrators:** While powerful, tools like Kubernetes with GPU support can be overkill for many private setups. Tokilake offers a more streamlined solution for LLM inference access.
-
-## How It Works (Conceptual Overview)
-
-1.  **Setup Database:** A PostgreSQL cluster is set up to store Tokilake's shared state (Tokiame registrations, namespaces, API keys).
-2.  **Deploy Tokilake Server(s):** One or more Tokilake server instances are deployed in desired locations. They all connect to the same PostgreSQL database.
-3.  **Deploy Tokiame Client(s):** On each machine with GPUs you want to make available:
-      * Install your desired inference server (e.g., vLLM, SGLang, llama.cpp).
-      * Install and configure Tokiame, pointing it to one of your Tokilake server addresses. Provide a unique `namespace`.
-      * Tokiame establishes an outbound gRPC connection to a Tokilake server and registers itself and its models in the shared PostgreSQL database.
-4.  **User Access:**
-      * Users (or applications) make API requests (e.g., OpenAI-compatible chat completion requests) to any of your Tokilake server URLs.
-      * Tokilake authenticates the request, looks up available providers for the requested model in the database, and securely forwards the task via gRPC to an appropriate, connected Tokiame client.
-      * Tokiame passes the task to the local inference server, gets the result, and sends it back through Tokilake to the user.
+1.  **Tokilake Server:** A smart reverse proxy and API gateway. Multiple Tokilake servers can form a distributed network, sharing state (registered Tokiame clients, namespaces, model mappings) via a central PostgreSQL database. Users connect to the nearest Tokilake node.
+2.  **Tokiame Client:** A lightweight agent that connects *outbound* to a Tokilake server.
+      * **Deployment:** Tokiame can be deployed on a machine within your private network (intranet). From there, it communicates with your local LLM inference servers (e.g., Ollama, vLLM) that expose an OpenAI-compatible API on that same intranet.
+      * **Function:** It registers the available models from these local inference servers with the Tokilake network under a chosen `namespace`. The registration process involves authentication of the Tokiame client to the Tokilake server. It then forwards inference tasks received from a Tokilake server to the appropriate local inference server.
 
 <!-- end list -->
 
 ```mermaid
 graph LR
-    User[End User/Application] -->|API Request| TL_Node1[Tokilake Node 1 e.g. US-East]
-    User -->|API Request| TL_Node2[Tokilake Node 2 e.g. EU-West]
+    User[End User/Application] -->|OpenAI-compatible API Request| TL_Node1[Tokilake Node 1 e.g. US-East]
+    User -->|OpenAI-compatible API Request| TL_Node2[Tokilake Node 2 e.g. EU-West]
 
-    TL_Node1 <-->|Shared State| DB[(PostgreSQL Cluster)]
-    TL_Node2 <-->|Shared State| DB
+    DB[PostgreSQL Cluster] -->|Shared State: Namespaces, Hashed Secrets, Model Mappings| TL_Node1
+    DB -->|Shared State: Namespaces, Hashed Secrets, Model Mappings| TL_Node2
 
-    DB <-->|Registration Info| TM1_Client[Tokiame Client 1 Private GPU 1 - No Public IP]
-    DB <-->|Registration Info| TM2_Client[Tokiame Client 2 Private GPU 2 - No Public IP]
+    subgraph Your_Private_Network_LAN1 ["Your Private Network / Datacenter LAN"]
+        direction LR
+        TM_Client1[Tokiame Client - e.g. on a utility server in LAN1]
 
-    TL_Node1 -->|gRPC Task| TM1_Client
-    TL_Node2 -->|gRPC Task| TM2_Client
+        subgraph GPU_Host_A_LAN1 ["GPU Host A (LAN1)"]
+            InfServA[Inference Server A - e.g. Ollama - OpenAI API]
+        end
+        subgraph GPU_Host_B_LAN1 ["GPU Host B (LAN1)"]
+            InfServB[Inference Server B - e.g. vLLM - OpenAI API]
+        end
 
-    TM1_Client -->|Local Inference| GPU1_Server[Inference Server @ GPU1]
-    TM2_Client -->|Local Inference| GPU2_Server[Inference Server @ GPU2]
-
-    subgraph Your_Private_Network_1
-        TM1_Client
-        GPU1_Server
+        TM_Client1 --> |Local HTTP API Call| InfServA
+        TM_Client1 --> |Local HTTP API Call| InfServB
     end
 
-    subgraph Your_Private_Network_2
-        TM2_Client
-        GPU2_Server
-    end
+    TM_Client1 -.->|Secure Outbound gRPC: Register & Await Tasks| TL_Node1
+    %% If you have another separate private network
+    %% subgraph Your_Private_Network_LAN2 ["Your Private Network / Office LAN"]
+    %%     direction LR
+    %%     TM_Client2[Tokiame Client (LAN2)]
+    %%     subgraph GPU_Host_C_LAN2 ["GPU Host C (LAN2)"]
+    %%         InfServC[Inference Server C]
+    %%     end
+    %%     TM_Client2 --> |Local HTTP API Call| InfServC
+    %% end
+    %% TM_Client2 -.->|Secure Outbound gRPC| TL_Node2
+
+    style TM_Client1 fill:#D5F5E3,stroke:#2ECC71
+    style InfServA fill:#EBF5FB,stroke:#3498DB
+    style InfServB fill:#EBF5FB,stroke:#3498DB
+
 ```
 
-## Use Cases
+**Flow:**
 
-  * **Individuals with Multiple GPU Machines:** Access your home desktop GPU from your laptop while traveling, or your office workstation from home.
-  * **Friends & Collaborators:** Pool GPU resources within a trusted group for shared projects without complex networking.
-  * **Small Companies/Startups:** Build a cost-effective internal AI inference platform using existing hardware before investing in expensive cloud GPUs.
-  * **Researchers:** Easily share access to specialized fine-tuned models hosted on different lab machines.
-  * **Edge AI Deployments:** While not its primary focus, the architecture could be adapted for managing inference on distributed edge devices that have intermittent connectivity.
+1.  **Setup:** Deploy PostgreSQL, Tokilake Server(s). On your private network(s), deploy LLM inference servers on your GPU machines. Deploy Tokiame Client(s) on a machine within each private network that can reach its local inference servers.
+2.  **Registration:** Each Tokiame client authenticates and connects out to a Tokilake server. It registers its `namespace` and the models available from the local inference servers it manages (details typically in Tokiame's local configuration like `model.toml`). This information is stored in PostgreSQL.
+3.  **User Request:** User sends an OpenAI-compatible API request (e.g., for `my-lan-1:llama3`) to any Tokilake server.
+4.  **Routing & Inference:** Tokilake verifies the request, finds a suitable, connected Tokiame client (`my-lan-1`) that offers the model (`llama3`). The task is securely forwarded to that Tokiame client. Tokiame then makes a local API call to the relevant inference server (e.g., running Llama 3), gets the result, and sends it back through Tokilake to the user.
 
-## Getting Started
+## 🚀 Getting Started
 
-*Documentation coming soon\!* Details on setting API secrets for Tokiame clients and user authentication will be included.
+### Prerequisites
 
-High-level steps will involve:
+  * **Go**: Version `1.21` or newer (for Tokiame).
+  * **Rust & Cargo**: Latest stable (for Tokilake Server).
+  * **protoc**: Version `3.19` or newer (ensure compatibility with project's gRPC dependencies).
+  * **Git**
+  * **PostgreSQL Server** (e.g., v12+) & **psql** client
+  * **LLM Inference Server(s)**: Running on your GPU machine(s) and exposing an OpenAI-compatible API accessible within their local network (e.g., [Ollama](https://ollama.com/), [vLLM](https://vllm.ai/)).
 
-1.  Setting up your PostgreSQL database.
-2.  Building and configuring the Tokilake server.
-3.  Building and configuring the Tokiame client on your GPU machines (including API secret setup).
-4.  Pointing your applications to your Tokilake API endpoint.
+### 1\. Set Up PostgreSQL
 
-## Current Status & Roadmap
-
-  * ✅ Core functionality for proxying LLM chat completions.
-  * ✅ Tokilake server and Tokiame client implementation with gRPC.
-  * ✅ PostgreSQL backend for distributed Tokilake nodes and persistent configuration.
-  * 🔜 Support for Text-to-Speech (TTS) models (pending availability of more powerful open-source models).
-  * 🔜 Detailed documentation and examples (including API secret configuration and user authentication to Tokilake).
-  * 🔜 Enhanced model management and discovery features.
-  * 🔜 Support for more inference server backends.
-  * 🔜 Observability (logging, metrics).
-
-We are actively developing Tokilake. Contributions and feedback are welcome\!
-
-## Comparison to Alternatives
-
-  * **Cloud LLM APIs (OpenAI, Gemini, etc.):** Offer ease of use but can be expensive and raise privacy concerns for sensitive data. Tokilake lets you use your own models on your own hardware.
-  * **API Aggregators (OpenRouter, LiteLLM):** Great for accessing *public* models. Tokilake is your *private* OpenRouter for your *own, non-public* GPUs. LiteLLM can be self-hosted and is excellent for unifying access to various APIs, but Tokilake adds the critical layer of making private, NATted GPUs accessible.
-  * **DePIN Compute Projects:** Aim to create public, tokenized markets for GPU power. Tokilake is focused on private, trusted networks without the crypto layer.
-  * **VPNs/SSH Tunnels/ngrok/Cloudflare Tunnel:** Useful for general remote access but lack the specialized LLM API gateway features, dynamic registration, load balancing (across your private fleet), and centralized management that Tokilake provides for inference tasks.
-
-## Contributing
-
-We welcome contributions\! Please see `CONTRIBUTING.md` for details on how to get started with development, report issues, and make pull requests.
-
-## License
-
-Tokilake is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
-
-
-## Getting Started
-
-This guide will walk you through setting up Tokilake and Tokiame.
-
-**Prerequisites:**
-
-* **Rust and Cargo:** For building the Tokilake server. (Visit [rust-lang.org](https://www.rust-lang.org/tools/install))
-* **Make and C++ Compiler:** For building the Tokiame client from source (e.g., `build-essential` on Debian/Ubuntu).
-* **Git:** For cloning the repository.
-* **PostgreSQL Server:** Running and accessible.
-* **psql (PostgreSQL client CLI):** For importing the initial schema (usually part of PostgreSQL server or client packages).
-* **An LLM Inference Server:** Such as Ollama, running on your GPU machine(s).
-
-**1. Set Up Your LLM Inference Server (e.g., Ollama)**
-
-Ensure you have an LLM inference server running on the machine(s) where you intend to deploy Tokiame. Tokilake is designed to work with various backends.
-
-* **Ollama:** Install Ollama (see [ollama.com](https://ollama.com/)) and pull the models you want to serve (e.g., `ollama pull llama3`).
-    *(Currently, testing has been primarily focused on Ollama. In theory, other backends like SGLang or vLLM, once configured to serve models, should also work with Tokiame.)*
-
-**2. Set Up PostgreSQL Database**
-
-Install PostgreSQL if you haven't already. Then, create a database for Tokilake and import the schema.
+For simplicity, we recommend running PostgreSQL using Docker:
 
 ```bash
-# Example commands (may vary based on your PostgreSQL setup and user privileges)
-createdb tokilake_db
-# Ensure the path to your SQL migration file is correct. Example:
-psql -U your_postgres_user -d tokilake_db -f migrations/001_initial_schema.sql
+docker run -d --name tokilake-postgres --restart unless-stopped --shm-size 512m \
+  -e TZ=UTC -e POSTGRES_PASSWORD=your_strong_password \
+  -p 5432:5432 postgres:14
 ```
-* Replace `your_postgres_user` with your PostgreSQL username. You will be prompted for the password.
-* Adjust `migrations/001_initial_schema.sql` if your initial schema file has a different name or path.
 
-**3. Build Tokilake Server and Tokiame Client**
+*Remember to use a strong password and configure your database for your production needs (e.g., user, database name, resilience).*
+*Initialize the schema (details will be in `docs/DATABASE_SETUP.md` or similar):*
 
-Clone the repository first if you haven't:
 ```bash
-git clone https://github.com/yourusername/tokilake.git # Replace with your actual repository URL
+# psql -h your_postgres_host -U your_user -d your_database_name < ./sql/schema.sql
+```
+
+### 2\. Set Up Your LLM Inference Servers
+
+On each GPU machine, install and run your LLM inference server, ensuring it exposes an OpenAI-compatible API endpoint accessible from where you plan to run Tokiame (e.g., `http://<gpu_host_ip>:11434` for Ollama).
+
+  * **Ollama Example on `192.168.1.101`**:
+    ```bash
+    # Install from ollama.com on the GPU machine
+    ollama pull llama3
+    # Ensure Ollama is configured to listen on an IP accessible from your Tokiame host,
+    # e.g., OLLAMA_HOST=0.0.0.0 ollama serve (or specific IP like 192.168.1.101)
+    ```
+
+### 3\. Build Tokilake & Tokiame
+
+First, clone the project repository:
+
+```bash
+git clone https://github.com/Tokimorphling/tokilake # Replace with your actual repo URL
 cd tokilake
 ```
 
-**Build Tokilake Server:**
-The Tokilake server is written in Rust.
+**Build Tokilake Server (Rust):**
+
 ```bash
 cargo build --release
 # The binary will be located at ./target/release/tokilake
 ```
 
-**Build Tokiame Client:**
-The Tokiame client is typically built using Make.
+**Build Tokiame Client (Go):**
+
 ```bash
 cd tokiame
-make
-# The binary will usually be located at ./build/bin/tokiame (check its Makefile if different)
+make # Or: go build -o ../build/bin/tokiame ./cmd/tokiame
+# The binary will usually be located at ./build/bin/tokiame or ../build/bin/tokiame
 cd .. # Return to the project root
 ```
-* *Note: Pre-compiled binaries or Docker images for Tokilake and Tokiame may be provided in the future. For now, please build from source.*
-* The Tokilake server consumes very few resources, so you might consider deploying it on a cost-effective VPS or even a free-tier cloud container service.
 
-**4. Run Tokilake Server**
+*(Note: Pre-compiled binaries or Docker images might be available in the future.)*
 
-Deploy the Tokilake server binary (`target/release/tokilake`) to your chosen server (e.g., a cloud VPS). It needs the `DATABASE_URL` environment variable to connect to your PostgreSQL database.
+### 4\. Run Tokilake Server(s)
+
+Deploy the Tokilake server binary (`target/release/tokilake`) to your chosen server(s). It primarily uses environment variables for configuration (like `DATABASE_URL`) and may have internal defaults for listen addresses.
 
 ```bash
-export DATABASE_URL="postgres://your_user:your_password@your_postgres_host:port/tokilake_db"
+export DATABASE_URL="postgres://your_user:your_strong_password@your_postgres_host:5432/your_database_name"
 ./target/release/tokilake
+# Tokilake server will listen on default ports for HTTP API (e.g., 8000)
+# and gRPC for Tokiame clients (e.g., 19982).
+# Refer to Tokilake documentation for details on changing default ports or other configurations
+# (e.g., via a configuration file or other environment variables if supported).
 ```
-* Replace `your_user`, `your_password`, `your_postgres_host`, `port`, and `tokilake_db` with your actual PostgreSQL connection details.
-* The Tokilake server will listen for incoming gRPC connections from Tokiame clients and HTTP API requests from end-users. Note the IP/hostname and port it's listening on. Check its startup logs or default configuration for specific ports (e.g., HTTP(S) on `0.0.0.0:19981`, gRPC on `0.0.0.0:19982`).
 
-**5. Run Tokiame Client**
+*Check the startup logs of the Tokilake server to confirm the IP/hostname and ports it's listening on.*
 
-Deploy the Tokiame client binary (e.g., `tokiame/build/bin/tokiame`) to each GPU machine that is running your LLM inference server (e.g., Ollama).
+### 5\. Run Tokiame Client(s)
 
-When running Tokiame, you need to provide:
-* A unique `namespace` for this provider/GPU machine (e.g., "my-rtx4090-desktop").
-* The gRPC address of your Tokilake server.
-<!-- * An `api_secret` that this Tokiame client will use to register with the Tokilake network. This secret is defined by you; Tokilake will store its hash. -->
-* Connection details for your local LLM inference server.
+Deploy the Tokiame client binary (e.g., `build/bin/tokiame`) to a machine that has access to your GPU inference servers running Ollama, vLLM, or SGLang. Ensure that this Tokiame machine has network connectivity to those inference servers
+
+Use the following command structure, providing the required flags:
 
 ```bash
-# Example for a Tokiame client connecting to Ollama running locally
-./tokiame/build/bin/tokiame \
-  --namespace "my-rtx4090-desktop" \
-  --addr "your_tokilake_server_ip_or_domain:19982"
+./build/bin/tokiame \
+  -a "your_tokilake_server_ip_or_domain:19982" \
+  -n "my-datacenter-gpus" \
 ```
-* Replace placeholders like `your_tokilake_server_ip_or_domain:19982` with the actual gRPC address of your Tokilake server.
-* The models supported by tokiame can be configured in `model.toml`
 
-**6. Enjoy Your Private AI Cloud!**
+  * **`-a, --addr string`**: (Required) The remote gRPC address of your Tokilake server.
+  * **`-n, --namespace string`**: (Required) A unique identifier for this Tokiame instance or the group of GPUs it represents. This is used by end-users as part of the model string.
+  * **`-l, --api-addr string`**: (Optional) The address on which Tokiame itself will listen for local API requests (e.g., for health checks or local management). Defaults to `localhost:7749`.
+  * **`-h, --help`**: Displays help for Tokiame command-line options.
 
-You can now send OpenAI-compatible API requests to your Tokilake server's HTTP endpoint.
+*Always refer to `tokiame --help` for the most up-to-date flags and consult Tokiame's specific documentation for details on provider authentication and model configuration file structure.*
 
-* **Base URL:** Use your Tokilake server's HTTP address (e.g., `http://your_tokilake_server_ip_or_domain:19981`) as the `base_url` in your OpenAI client. Append `/v1` if your server routes OpenAI-compatible requests through it.
-* **Model Name:** Specify the model as `namespace:model_name_on_inference_server` (e.g., `my-rtx4090-desktop:llama3` if `llama3` is the model name in Ollama).
-* **API Key:** For requests to Tokilake, use the API key mechanism if/when implemented for end-user authentication. For now, you might use a placeholder or a pre-configured static key if required by Tokilake.
+### 🎉 Use Your Private AI Cloud\!
 
-Example using the Python `openai` library:
+Once both Tokilake server(s) and Tokiame client(s) are running and registered, you can send OpenAI-compatible API requests to your Tokilake server's HTTP endpoint.
+
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://your_tokilake_server_ip_or_domain:8000/v1", # Adjust if /v1 is not needed or path is different
-    api_key="YOUR_TOKILAKE_USER_API_KEY_IF_APPLICABLE"  # Use a placeholder like "NA" or a real key if Tokilake requires user auth
+    base_url="http://your_tokilake_server_ip_or_domain:8000/v1", # Tokilake's OpenAI-compatible endpoint
+    api_key="YOUR_TOKILAKE_USER_API_KEY" # Currently, API keys are not supported for end-user authentication to Tokilake, but this feature will be added soon. For now, pass any string if your client requires it, or an empty string if allowed. Provider-level authentication (Tokiame to Tokilake) is handled separately as configured in Tokiame.
 )
 
 try:
     chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": "Explain the Tokilake project in simple terms.",
-            }
-        ],
-        model="my-rtx4090-desktop:llama3" # Use the namespace and model name
+        messages=[{"role": "user", "content": "Explain the Tokilake project in simple terms."}],
+        model="my-datacenter-gpus:llama3" # Format: namespace:model_name_as_in_tokiame_config
     )
     print(chat_completion.choices[0].message.content)
 except Exception as e:
     print(f"An error occurred: {e}")
-
 ```
 
+## 🎯 Simple Usage Scenarios
 
-## Other ways to play with Tokilake
+  * **Solo Developer:** Access your powerful home desktop GPU (running Ollama) from your laptop while traveling. Tokiame runs on a Raspberry Pi (or the desktop itself) on your home network, pointing to your desktop's Ollama API, and connects out to a Tokilake server you host on a cheap VPS.
+  * **Team with a LAN:** A small team has several GPU workstations on an office LAN. One Tokiame instance runs on a utility server in that LAN, configured to access OpenAI-compatible APIs on each workstation. The entire team uses a single Tokilake URL (pointing to their self-hosted Tokilake server) to access all these GPUs as a unified resource.
+  * **Distributed Research Group:** Collaborators in different labs, each with their own private networks and GPUs, run local Tokiame clients within their respective LANs. They all connect their Tokiame clients to a shared, distributed Tokilake server network for pooled resources and easy cross-lab model access.
 
-Beyond creating a private cloud for your own GPUs, Tokilake offers additional functionalities:
+## 💡 Additional Use Case: API Forwarder (OpenRouter-like)
 
-**As an API Forwarder for LLMs (OpenRouter-like)**
-    * Tokilake can function as an API forwarder for Large Language Models.
-    * The endpoint for this feature is `/v2/chat/completion`.
-    * This allows you to route your API requests through a unified Tokilake interface, similar to services like OpenRouter.
-    * This part refers to the implementation of `aichat` ([https://github.com/sigoden/aichat](https://github.com/sigoden/aichat)) (including code).
+Tokilake can function as an API forwarder for Large Language Models via its `/v2/chat/completion` endpoint (or similar, specific endpoint TBD). This allows you to route API requests through a unified Tokilake interface, similar to services like OpenRouter. This feature draws inspiration from the `aichat` implementation. This could be used to centralize access not just to your private Tokiame-connected models but potentially others if Tokilake is extended.
+
+## 🗺️ Current Status & Roadmap
+
+  * ✅ Core functionality for proxying LLM chat completions.
+  * ✅ Tokilake server and Tokiame client implementation with gRPC.
+  * ✅ PostgreSQL backend for distributed Tokilake nodes and persistent configuration (namespaces, provider authentication info, model registrations).
+  * 🔜 **Detailed Documentation:** Comprehensive setup guides, Tokiame model configuration specifics, provider authentication best practices, and future user authentication details.
+  * 🔜 **End-User Authentication & Authorization:** Implementing robust authentication (e.g., API keys, OAuth) for users accessing the Tokilake API gateway.
+  * 🔜 **Enhanced Model Management & Discovery:** Features within Tokilake/Tokiame for better model tagging, capability reporting, and easier discovery.
+  * 🔜 **Support for Text-to-Speech (TTS) models:** (Pending availability of more powerful open-source options and demand).
+  * 🔜 **Support for more inference server backends/types** within Tokiame.
+  * 🔜 **Observability:** Enhanced logging, metrics, and tracing for better operational insight.
+
+We are actively developing Tokilake. Contributions and feedback are welcome\!
+
+## 🆚 Comparison to Alternatives
+
+  * **Cloud LLM APIs (OpenAI, Gemini, etc.):** Offer ease of use but can be expensive and raise privacy concerns for sensitive data. Tokilake lets you use your own models on your own hardware.
+  * **API Aggregators (OpenRouter, LiteLLM):** Great for accessing *public/commercial* models. Tokilake is your *private* OpenRouter for your *own, non-public* GPUs. LiteLLM is excellent for unifying API calls to various services (including self-hosted models); Tokilake specifically adds the critical layer of making private, NATted GPUs accessible as a unified resource endpoint and manages the registration of these private providers.
+  * **DePIN Compute Projects:** Aim to create public, tokenized markets for GPU power. Tokilake is focused on private, trusted networks without the crypto layer.
+  * **VPNs/SSH Tunnels/ngrok/Cloudflare Tunnel:** Useful for general remote access but lack the specialized LLM API gateway features, dynamic provider/model registration, (future) load balancing across your private fleet, and centralized management that Tokilake provides for inference tasks.
+
+## 🤝 Contributing
+
+This project is in its early stages, and we welcome your contributions\! If you like what we're building, please consider joining us to make it even better.
+
+  * **Contributing**: See `CONTRIBUTING.md` for details on how to get started with development, report issues, and make pull requests.
+  * **Support the Author**: If you'd like to support the ongoing development, you can sponsor the author through cryptocurrency. Your support helps drive progress\! *(Link/address to your sponsorship page/wallet)*
+
+## 🌐 Other Languages
+
+  * [简体中文](README.zh-CN.md) *(Placeholder - create this file if you have a translation)*
+  * [Español](https://www.google.com/search?q=README.es.md) *(Placeholder - create this file if you have a translation)*
+  * *(Add more languages as they become available)*
 
 
+-----
 ## Contributing & Support
 
 This project is in its early stages. If you like it, you are welcome to build it together! Please see `CONTRIBUTING.md` for details on how to get started with development, report issues, and make pull requests.
 
-If you want to support the author, you can sponsor her through cryptocurrency to help her make better progress:
+If you want to support the author, you can sponsor it through cryptocurrency to help it make better progress:
+
 
 
 * **Bitcoin:** `bc1pgnls57637tz5ytcf2fmw3f04c35v5dnalg3wycx9qhqvfjdg0ccs62pj63`
