@@ -81,15 +81,28 @@ func (b *OpenAIClientConfigBuilder) Model(model string) *OpenAIClientConfigBuild
 func (b *OpenAIClientConfigBuilder) Messages(messages []*pb.ChatMessage) *OpenAIClientConfigBuilder {
 	chatMessages := make([]openai.ChatCompletionMessage, 0)
 	for _, message := range messages {
-		chatMessage := openai.ChatCompletionMessage{Role: mapToOpenAIRole(message.Role), Content: message.GetTextContent()}
+		// message.GetContentType()
+		chatMessage := openai.ChatCompletionMessage{Role: mapToOpenAIRole(message.Role)}
+		if message.ContentType == nil {
+			chatMessages = append(chatMessages, chatMessage)
+			continue
+		}
+
+		switch v := message.ContentType.(type) {
+		case *pb.ChatMessage_TextContent:
+			chatMessage.Content = v.TextContent
+		case *pb.ChatMessage_MultiContent:
+			chatMessage.MultiContent = *mapToOpenAIContentPart(v.MultiContent.Parts)
+
+		}
 		chatMessages = append(chatMessages, chatMessage)
 	}
+
 	b.config.messages = &chatMessages
 	return b
 }
 
 func (b *OpenAIClientConfigBuilder) OpenAIMessages(messages *[]openai.ChatCompletionMessage) *OpenAIClientConfigBuilder {
-
 	b.config.messages = messages
 	return b
 }
@@ -115,12 +128,23 @@ func mapToOpenAIRole(originalRole pb.ChatMessage_Role) string {
 }
 
 func mapToOpenAIContentPart(parts []*pb.ContentPart) *[]openai.ChatMessagePart {
+
 	newParts := make([]openai.ChatMessagePart, 0)
-	// for _, part := range parts {
-	// 	imgData := part.GetImageData()
-	// 	ty := part.GetImageData()
-	// 	newParts = append(newParts, openai.ChatMessagePart{Type: openai.ChatMessagePartTypeImageURL, ImageURL: imgData.Uri})
-	// }
+
+	for _, part := range parts {
+		p := &openai.ChatMessagePart{}
+		switch v := part.PartType.(type) {
+		case *pb.ContentPart_Text:
+			p.Type = openai.ChatMessagePartTypeText
+			p.Text = v.Text
+		case *pb.ContentPart_ImageData:
+			p.Type = openai.ChatMessagePartTypeImageURL
+			p.ImageURL = &openai.ChatMessageImageURL{URL: *v.ImageData.Uri}
+		}
+
+		newParts = append(newParts, *p)
+
+	}
 	return &newParts
 
 }

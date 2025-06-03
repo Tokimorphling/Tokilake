@@ -1,10 +1,11 @@
 mod pb;
 
 mod server;
+
 use common::data::ChatCompletionsData;
 use futures_util::Stream;
 use pb::{TokiameMessage, TokilakeMessage, tokiame_message, tokilake_message};
-pub use server::{InferenceServer, map_to_sse_stream, run_inference_server, map_to_http_response};
+pub use server::{InferenceServer, map_to_http_response, map_to_sse_stream, run_inference_server};
 use std::sync::Arc;
 use volo::FastStr;
 pub use volo_grpc::Status;
@@ -37,7 +38,6 @@ impl MakeMessage for TokiameMessage {
 pub trait InferenceService {
     fn chat_completion(
         self: Arc<Self>,
-        // &self,
         namespace: FastStr,
         request: ChatCompletionsData,
     ) -> impl Future<Output = impl Stream<Item = Result<TokiameMessage, Status>>> + Send;

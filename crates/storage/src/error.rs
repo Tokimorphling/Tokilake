@@ -15,7 +15,7 @@ pub enum Error {
     MsgError(FastStr),
 
     #[error("{0}")]
-    MigrateError(FastStr)
+    MigrateError(FastStr),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

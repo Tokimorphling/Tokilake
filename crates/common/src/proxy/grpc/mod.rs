@@ -5,11 +5,8 @@ pub enum GrpcOriginalPayload {
     ChatCompletionsRequest(ChatCompletionsData),
     StreamInferenceChunkResponse(FastStr),
     StreamInferenceChunkEnd,
-    
 
     Empty,
-
-
 }
 
 pub enum SseStatus {}

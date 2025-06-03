@@ -141,25 +141,25 @@ impl<'a> ChatCompletionRequestBuilder<'a> {
         self
     }
 
-    pub fn n(mut self, n: i32) -> Self {
-        self.n = Some(n);
-        self
-    }
+    // pub fn n(mut self, n: i32) -> Self {
+    //     self.n = Some(n);
+    //     self
+    // }
 
-    pub fn add_stop_sequence(mut self, sequence: &'a str) -> Self {
-        self.stop.push(sequence);
-        self
-    }
+    // pub fn add_stop_sequence(mut self, sequence: &'a str) -> Self {
+    //     self.stop.push(sequence);
+    //     self
+    // }
 
     // pub fn stop_sequences(mut self, sequences: Vec<impl Into<pilota::FastStr>>) -> Self {
     //     self.stop = sequences.into_iter().map(|s| s.into()).collect();
     //     self
     // }
 
-    pub fn presence_penalty(mut self, penalty: Option<f32>) -> Self {
-        self.presence_penalty = penalty;
-        self
-    }
+    // pub fn presence_penalty(mut self, penalty: Option<f32>) -> Self {
+    //     self.presence_penalty = penalty;
+    //     self
+    // }
 
     pub fn frequency_penalty(mut self, penalty: Option<f32>) -> Self {
         self.frequency_penalty = penalty;
@@ -176,40 +176,40 @@ impl<'a> ChatCompletionRequestBuilder<'a> {
     //     self
     // }
 
-    pub fn user(mut self, user: &'a str) -> Self {
-        self.user = Some(user);
-        self
-    }
+    // pub fn user(mut self, user: &'a str) -> Self {
+    //     self.user = Some(user);
+    //     self
+    // }
 
-    pub fn add_tool(mut self, tool: Tool) -> Self {
-        self.tools.push(tool);
-        self
-    }
+    // pub fn add_tool(mut self, tool: Tool) -> Self {
+    //     self.tools.push(tool);
+    //     self
+    // }
 
-    pub fn tools_vec(mut self, tools: Vec<Tool>) -> Self {
-        self.tools = tools;
-        self
-    }
+    // pub fn tools_vec(mut self, tools: Vec<Tool>) -> Self {
+    //     self.tools = tools;
+    //     self
+    // }
 
     // pub fn tool_choice(mut self, choice: chat_completion_request::ToolChoiceOneof) -> Self {
     //     self.tool_choice_oneof = Some(choice);
     //     self
     // }
 
-    pub fn response_format(mut self, format: ResponseFormat) -> Self {
-        self.response_format = Some(format);
-        self
-    }
+    // pub fn response_format(mut self, format: ResponseFormat) -> Self {
+    //     self.response_format = Some(format);
+    //     self
+    // }
 
-    pub fn seed(mut self, seed: i64) -> Self {
-        self.seed = Some(seed);
-        self
-    }
+    // pub fn seed(mut self, seed: i64) -> Self {
+    //     self.seed = Some(seed);
+    //     self
+    // }
 
-    pub fn system_message(mut self, message: &'a str) -> Self {
-        self.system_message = Some(message);
-        self
-    }
+    // pub fn system_message(mut self, message: &'a str) -> Self {
+    //     self.system_message = Some(message);
+    //     self
+    // }
 
     /// Builds the `ChatCompletionRequest`.
     pub fn build(self) -> ChatCompletionRequest {

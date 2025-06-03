@@ -9,7 +9,6 @@ async fn main() -> Result<()> {
 
     let database_url = std::env::var("DATABASE_URL").expect("no database url");
 
-    
     let storage = Storage::<ClientCache>::new(&database_url).await?;
 
     let inference_server_addr: SocketAddr = "0.0.0.0:19982".parse()?;
