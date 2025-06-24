@@ -1,4 +1,4 @@
-# Tokilake: Your Private, Distributed, Self-hosted openrouter 🚀
+# Tokilake: Control your own GPUs like Openrouter 🚀
 
 [](https://www.google.com/search?q=%5Bhttps://opensource.org/licenses/MIT%5D\(https://opensource.org/licenses/MIT\))
 **Turn Your Local GPU Clusters into a Private, Globally Distributed AI Cloud.**
@@ -15,7 +15,7 @@ Unlock your GPU potential, even if your hardware is behind NATs and firewalls. T
   * 🏢 **Unified API Gateway:** A single, OpenAI-compatible endpoint for all your distributed models.
   * 🔗 **Flexible Tokiame Deployment:** Deploy Tokiame agents directly on GPU machines or centrally within your intranet to manage multiple local inference servers.
   * 📉 **Low Latency, High Availability:** Distributed Tokilake server nodes connect users to the nearest resource, with resilience built-in (requires resilient DB).
-  * 🚄 **Efficient & Optimized:** Uses gRPC for fast Tokilake-Tokiame communication, focused on LLMs (TTS planned).
+  * 🚄 **Efficient & Optimized:** Uses gRPC for fast Tokilake-Tokiame communication, focused on LLMs.
   * 🧩 **Simpler Than Orchestrators:** A more streamlined solution for LLM inference access compared to full Kubernetes setups.
   * 🤝 **Share with Your Group:** Easily pool resources within a trusted group.
 
@@ -82,7 +82,7 @@ graph LR
 
 ### Prerequisites
 
-  * **Go**: Version `1.21` or newer (for Tokiame).
+  * **Go**: Version `1.24` or newer (for Tokiame).
   * **Rust & Cargo**: Latest stable (for Tokilake Server).
   * **protoc**: Version `3.19` or newer (ensure compatibility with project's gRPC dependencies).
   * **Git**
@@ -219,7 +219,6 @@ Tokilake can function as an API forwarder for Large Language Models via its `/v2
   * 🔜 **Detailed Documentation:** Comprehensive setup guides, Tokiame model configuration specifics, provider authentication best practices, and future user authentication details.
   * 🔜 **End-User Authentication & Authorization:** Implementing robust authentication (e.g., API keys, OAuth) for users accessing the Tokilake API gateway.
   * 🔜 **Enhanced Model Management & Discovery:** Features within Tokilake/Tokiame for better model tagging, capability reporting, and easier discovery.
-  * 🔜 **Support for Text-to-Speech (TTS) models:** (Pending availability of more powerful open-source options and demand).
   * 🔜 **Support for more inference server backends/types** within Tokiame.
   * 🔜 **Observability:** Enhanced logging, metrics, and tracing for better operational insight.
 
