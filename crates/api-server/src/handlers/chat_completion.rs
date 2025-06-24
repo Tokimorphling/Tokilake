@@ -4,8 +4,8 @@ use crate::{
     tools::{create_done_frame, create_text_frame},
 };
 use crate::{
-    models::ChatCompletionRequest,
-    tools::{build_http_client, find_forward_clients, generate_completion_id, split_model},
+    requests::ChatCompletionRequest,
+    tools::{find_forward_clients, generate_completion_id, split_model},
 };
 use async_stream::stream;
 use chrono::Utc;
@@ -76,7 +76,6 @@ async fn chat_completion_handler(
     let name = model_name.clone();
     tokio::spawn(async move {
         let (sse_tx, sse_rx) = unbounded_channel();
-        let http_client = build_http_client().unwrap();
         let mut handler = SseHandler::new(sse_tx);
         let data = convert_body_to_data(req, &model_name, "".into());
         debug!("data: {}", serde_json::to_string_pretty(&data).unwrap());
@@ -89,7 +88,7 @@ async fn chat_completion_handler(
         let is_first = Arc::new(AtomicBool::new(true));
         tokio::join!(
             map_event(sse_rx, &tx, is_first.clone()),
-            chat_completions(client, &http_client, &mut handler, data, &tx, is_first)
+            chat_completions(client, &mut handler, data, &tx, is_first)
         );
     });
     let rx = UnboundedReceiverStream::new(rx);
@@ -104,7 +103,6 @@ pub fn convert_body_to_data(
 ) -> ChatCompletionsData {
     ChatCompletionsData {
         task_id,
-
         model_name: name.to_owned().into(),
         messages: body.messages,
         temperature: body.temperature,
@@ -148,14 +146,13 @@ async fn map_event(
 
 async fn chat_completions(
     client: OpenAIClient<'_>,
-    http_client: &reqwest::Client,
     handler: &mut SseHandler,
     data: ChatCompletionsData,
     tx: &UnboundedSender<ResEvent>,
     is_first: Arc<AtomicBool>,
 ) {
     let _first = if let Err(e) = client
-        .openai_chat_completions_streaming(http_client, handler, data)
+        .openai_chat_completions_streaming(handler, data)
         .await
     {
         Some(FastStr::from(format!("{e:?}")))

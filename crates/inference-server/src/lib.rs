@@ -20,7 +20,7 @@ impl MakeMessage for TokilakeMessage {
     type Message = TokilakeMessage;
     type Payload = tokilake_message::Payload;
     fn make_message(task_id: FastStr, payload: Option<Self::Payload>) -> Self::Message {
-        TokilakeMessage { task_id, payload }
+        Self { task_id, payload }
     }
 }
 
@@ -28,7 +28,7 @@ impl MakeMessage for TokiameMessage {
     type Message = TokiameMessage;
     type Payload = tokiame_message::Payload;
     fn make_message(id: FastStr, payload: Option<Self::Payload>) -> Self::Message {
-        TokiameMessage {
+        Self {
             tokiame_id: id,
             payload,
         }

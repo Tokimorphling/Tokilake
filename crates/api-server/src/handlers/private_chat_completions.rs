@@ -1,7 +1,7 @@
 use super::chat_completion::ResEvent;
 use crate::error::Result;
 use crate::handlers::chat_completion::convert_body_to_data;
-use crate::models::ChatCompletionRequest;
+use crate::requests::ChatCompletionRequest;
 use crate::tools::create_done_frame;
 use crate::tools::create_text_frame;
 use crate::tools::generate_completion_id;

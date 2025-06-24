@@ -7,7 +7,7 @@ use volo_http::utils::Extension;
 
 pub mod error;
 pub mod handlers;
-pub mod models;
+pub mod requests;
 pub mod tools;
 
 pub async fn run_api_server(addr: SocketAddr, server: InferenceServer) {
@@ -16,7 +16,7 @@ pub async fn run_api_server(addr: SocketAddr, server: InferenceServer) {
         .merge(handlers::chat_completion_router())
         .merge(handlers::public_models_router())
         .merge(handlers::private_model_router())
-        // .layer(Extension(db))
+        // .merge(handlers::speech_router())
         .layer(Extension(server));
     let addr = Address::from(addr);
     Server::new(app).run(addr).await.unwrap();

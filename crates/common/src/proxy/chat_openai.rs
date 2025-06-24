@@ -4,8 +4,10 @@ use crate::{
     data::{ChatCompletionsData, RequestData},
     stream::sse::{SseHandler, SseMmessage, sse_stream},
 };
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAIClinetConfig<'a> {
     pub name:     &'a str,
@@ -35,20 +37,25 @@ impl<'a> OpenAIClinetConfig<'a> {
 
 pub struct OpenAIClient<'a> {
     pub config: OpenAIClinetConfig<'a>,
+    pub client: reqwest::Client,
 }
 
 impl<'a> OpenAIClient<'a> {
     pub fn new(config: OpenAIClinetConfig<'a>) -> Self {
-        Self { config }
+        // let client =
+        let builder = Client::builder();
+        let timeout = Duration::from_secs(10);
+        let client = builder.connect_timeout(timeout).build().unwrap_or_default();
+
+        Self { config, client }
     }
     pub async fn openai_chat_completions_streaming(
         &self,
-        client: &reqwest::Client,
         handler: &mut SseHandler,
         data: ChatCompletionsData,
     ) -> Result<()> {
         let request_data = prepare_chat_completions(self, data)?;
-        let builder = request_builder(request_data, client);
+        let builder = request_builder(request_data, &self.client);
         openai_chat_completions_streaming(builder, handler).await?;
         Ok(())
     }

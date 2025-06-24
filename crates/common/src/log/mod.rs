@@ -9,7 +9,6 @@ pub fn logging_stdout() -> impl Drop {
         LevelFilter::INFO
     };
     tracing_subscriber::registry()
-        // .with(console_subscriber::spawn())
         .with(
             fmt::layer()
                 .with_writer(nonblocking)

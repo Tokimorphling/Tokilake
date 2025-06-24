@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"syscall"
 	"tokiame/api"
-	"tokiame/internal/utils"
 	"tokiame/pkg/cli"
 	"tokiame/pkg/config"
 	"tokiame/pkg/log"
@@ -24,7 +23,6 @@ func main() {
 	namespace := arg.Namespace
 	serverAddress := arg.Address
 	apiAddress := arg.ApiAddress
-	utils.Print()
 
 	log.Infof("client namespace: %s tokilake address: %s", namespace, serverAddress)
 

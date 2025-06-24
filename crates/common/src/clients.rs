@@ -22,17 +22,3 @@ pub struct ForwardClient {
     pub model_names: Models,
     pub public:      bool,
 }
-
-#[cfg(test)]
-mod tests {
-
-    // #[tokio::test]
-    // async fn test_clients() {
-    //     let pool = setup_db().await;
-    //     let storage = Storage { pool };
-    //     let clients = storage.get_clients(None).await.unwrap();
-    //     assert_eq!(clients.len(), 2);
-    //     assert_eq!(clients[0].name, "client1");
-    //     assert_eq!(clients[1].name, "client2");
-    // }
-}

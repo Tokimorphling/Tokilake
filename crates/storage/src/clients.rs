@@ -2,9 +2,29 @@ use crate::cache::KVCache;
 use crate::{Storage, error::Result};
 use common::clients::ForwardClient;
 use faststr::FastStr;
+use sqlx::prelude::FromRow;
 use tracing::info;
 
+#[derive(Debug, FromRow)]
+struct Client {
+    id:          i32,
+    // "type" is a reserved keyword in Rust, so we must rename it.
+    // The `#[sqlx(rename = "type")]` attribute tells sqlx to map
+    // the database column "type" to this field.
+    #[sqlx(rename = "type")]
+    client_type: FastStr,
+    namespace:   FastStr,
+    // Nullable columns in SQL map to Option<T> in Rust.
+    api_base:    Option<FastStr>,
+    api_key:     Vec<FastStr>,
+    public:      bool,
+}
+
 impl<C: KVCache<ForwardClient>> Storage<C> {
+    pub async fn is_public(&self, _namespace: impl AsRef<str>) -> bool {
+        true
+    }
+
     pub async fn get_public_clients(&self) -> Result<Vec<ForwardClient>> {
         let records = sqlx::query_as!(
             ForwardClient,
@@ -45,7 +65,6 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
         namespace: impl AsRef<str>,
     ) -> Result<Option<ForwardClient>> {
         if let Some(client) = self.cache.get(namespace.as_ref()).await {
-            info!("hit...");
             return Ok(Some(client));
         }
 
