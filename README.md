@@ -23,7 +23,7 @@ Unlock your GPU potential, even if your hardware is behind NATs and firewalls. T
 
 Tokilake uses a two-component system:
 
-1.  **Tokilake Server:** A smart reverse proxy and API gateway. Multiple Tokilake servers can form a distributed network, sharing state (registered Tokiame clients, namespaces, model mappings) via a central PostgreSQL database. Users connect to the nearest Tokilake node.
+1.  **Tokilake Server:** A smart reverse proxy and API gateway. Multiple Tokilake servers can form a distributed network, sharing state (registered Tokiame clients, namespaces, model mappings) via a central SQLite database. Users connect to the nearest Tokilake node.
 2.  **Tokiame Client:** A lightweight agent that connects *outbound* to a Tokilake server.
       * **Deployment:** Tokiame can be deployed on a machine within your private network (intranet). From there, it communicates with your local LLM inference servers (e.g., Ollama, vLLM) that expose an OpenAI-compatible API on that same intranet.
       * **Function:** It registers the available models from these local inference servers with the Tokilake network under a chosen `namespace`. The registration process involves authentication of the Tokiame client to the Tokilake server. It then forwards inference tasks received from a Tokilake server to the appropriate local inference server.
@@ -35,7 +35,7 @@ graph LR
     User[End User/Application] -->|OpenAI-compatible API Request| TL_Node1[Tokilake Node 1 e.g. US-East]
     User -->|OpenAI-compatible API Request| TL_Node2[Tokilake Node 2 e.g. EU-West]
 
-    DB[PostgreSQL Cluster] -->|Shared State: Namespaces, Hashed Secrets, Model Mappings| TL_Node1
+    DB[SQLite Database] -->|Shared State: Namespaces, Hashed Secrets, Model Mappings| TL_Node1
     DB -->|Shared State: Namespaces, Hashed Secrets, Model Mappings| TL_Node2
 
     subgraph Your_Private_Network_LAN1 ["Your Private Network / Datacenter LAN"]
@@ -73,8 +73,8 @@ graph LR
 
 **Flow:**
 
-1.  **Setup:** Deploy PostgreSQL, Tokilake Server(s). On your private network(s), deploy LLM inference servers on your GPU machines. Deploy Tokiame Client(s) on a machine within each private network that can reach its local inference servers.
-2.  **Registration:** Each Tokiame client authenticates and connects out to a Tokilake server. It registers its `namespace` and the models available from the local inference servers it manages (details typically in Tokiame's local configuration like `model.toml`). This information is stored in PostgreSQL.
+1.  **Setup:** Deploy SQLite, Tokilake Server(s). On your private network(s), deploy LLM inference servers on your GPU machines. Deploy Tokiame Client(s) on a machine within each private network that can reach its local inference servers.
+2.  **Registration:** Each Tokiame client authenticates and connects out to a Tokilake server. It registers its `namespace` and the models available from the local inference servers it manages (details typically in Tokiame's local configuration like `model.toml`). This information is stored in SQLite.
 3.  **User Request:** User sends an OpenAI-compatible API request (e.g., for `my-lan-1:llama3`) to any Tokilake server.
 4.  **Routing & Inference:** Tokilake verifies the request, finds a suitable, connected Tokiame client (`my-lan-1`) that offers the model (`llama3`). The task is securely forwarded to that Tokiame client. Tokiame then makes a local API call to the relevant inference server (e.g., running Llama 3), gets the result, and sends it back through Tokilake to the user.
 
@@ -86,24 +86,18 @@ graph LR
   * **Rust & Cargo**: Latest stable (for Tokilake Server).
   * **protoc**: Version `3.19` or newer (ensure compatibility with project's gRPC dependencies).
   * **Git**
-  * **PostgreSQL Server** (e.g., v12+) & **psql** client
+  * **SQLite Database** & **sqlite3** client
   * **LLM Inference Server(s)**: Running on your GPU machine(s) and exposing an OpenAI-compatible API accessible within their local network (e.g., [Ollama](https://ollama.com/), [vLLM](https://vllm.ai/)).
 
-### 1\. Set Up PostgreSQL
+### 1\. Set Up SQLite
 
-For simplicity, we recommend running PostgreSQL using Docker:
-
-```bash
-docker run -d --name tokilake-postgres --restart unless-stopped --shm-size 512m \
-  -e TZ=UTC -e POSTGRES_PASSWORD=your_strong_password \
-  -p 5432:5432 postgres:14
-```
+For simplicity, we recommend running SQLite using the default configuration:
 
 *Remember to use a strong password and configure your database for your production needs (e.g., user, database name, resilience).*
 *Initialize the schema (details will be in `docs/DATABASE_SETUP.md` or similar):*
 
 ```bash
-# psql -h your_postgres_host -U your_user -d your_database_name < ./sql/schema.sql
+# sqlite3 your_database.db < ./sql/schema.sql
 ```
 
 ### 2\. Set Up Your LLM Inference Servers
@@ -150,7 +144,7 @@ cd .. # Return to the project root
 Deploy the Tokilake server binary (`target/release/tokilake`) to your chosen server(s). It primarily uses environment variables for configuration (like `DATABASE_URL`) and may have internal defaults for listen addresses.
 
 ```bash
-export DATABASE_URL="postgres://your_user:your_strong_password@your_postgres_host:5432/your_database_name"
+export DATABASE_URL="sqlite:./tokilake.db"
 ./target/release/tokilake
 # Tokilake server will listen on default ports for HTTP API (e.g., 8000)
 # and gRPC for Tokiame clients (e.g., 19982).
@@ -215,7 +209,7 @@ Tokilake can function as an API forwarder for Large Language Models via its `/v2
 
   * ✅ Core functionality for proxying LLM chat completions.
   * ✅ Tokilake server and Tokiame client implementation with gRPC.
-  * ✅ PostgreSQL backend for distributed Tokilake nodes and persistent configuration (namespaces, provider authentication info, model registrations).
+  * ✅ SQLite backend for distributed Tokilake nodes and persistent configuration (namespaces, provider authentication info, model registrations).
   * 🔜 **Detailed Documentation:** Comprehensive setup guides, Tokiame model configuration specifics, provider authentication best practices, and future user authentication details.
   * 🔜 **End-User Authentication & Authorization:** Implementing robust authentication (e.g., API keys, OAuth) for users accessing the Tokilake API gateway.
   * 🔜 **Enhanced Model Management & Discovery:** Features within Tokilake/Tokiame for better model tagging, capability reporting, and easier discovery.

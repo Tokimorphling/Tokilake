@@ -3,7 +3,7 @@ FROM rust:alpine AS builder
 
 RUN apk add --no-cache build-base openssl-dev pkgconfig libcrypto3 openssl-libs-static
 
-RUN cargo install sqlx-cli --no-default-features --features postgres
+RUN cargo install sqlx-cli --no-default-features --features sqlite
 
 
 WORKDIR /app
@@ -28,7 +28,6 @@ COPY --from=builder /app/target/release/tokilake /app/tokilake
 
 
 USER appuser
-
 ENV RUST_LOG=info
 
 

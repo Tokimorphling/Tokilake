@@ -23,7 +23,7 @@ Tokilake让您能够无缝访问和管理分布式私有GPU资源，用于大语
 
 Tokilake采用双组件系统：
 
-1. **Tokilake服务器**：智能反向代理和API网关。多个Tokilake服务器可组成分布式网络，通过中央PostgreSQL数据库共享状态（注册的Tokiame客户端、命名空间、模型映射）。用户连接最近的Tokilake节点。
+1. **Tokilake服务器**：智能反向代理和API网关。多个Tokilake服务器可组成分布式网络，通过中央SQLite数据库共享状态（注册的Tokiame客户端、命名空间、模型映射）。用户连接最近的Tokilake节点。
 2. **Tokiame客户端**：轻量级代理程序，通过**出站连接**对接Tokilake服务器。
    - **部署方式**：Tokiame可部署在私有网络（内网）中的机器上，通过与本地LLM推理服务器（如Ollama、vLLM）通信，这些服务器需在内网暴露OpenAI兼容API。
    - **功能**：它将本地推理服务器的可用模型注册到Tokilake网络的指定`命名空间`下。注册过程包含Tokiame客户端对Tokilake服务器的认证，并负责将Tokilake下发的推理任务转发到对应的本地推理服务器。
@@ -33,7 +33,7 @@ graph LR
     User[终端用户/应用] -->|OpenAI兼容API请求| TL_Node1[Tokilake节点1 如美东]
     User -->|OpenAI兼容API请求| TL_Node2[Tokilake节点2 如欧西]
 
-    DB[PostgreSQL集群] -->|共享状态：命名空间、哈希密钥、模型映射| TL_Node1
+    DB[SQLite数据库] -->|共享状态：命名空间、哈希密钥、模型映射| TL_Node1
     DB -->|共享状态：命名空间、哈希密钥、模型映射| TL_Node2
 
     subgraph 您的私有网络_LAN1 ["您的私有网络/数据中心LAN"]
@@ -70,8 +70,8 @@ graph LR
 
 **工作流程：**
 
-1. **初始化**：部署PostgreSQL和Tokilake服务器。在私有网络中，GPU机器上部署LLM推理服务器。在每个私有网络中部署Tokiame客户端（需能访问本地推理服务器）。
-2. **注册**：每个Tokiame客户端认证并连接到Tokilake服务器，注册其`命名空间`及其管理的本地推理服务器可用模型（具体配置在Tokiame的`model.toml`等文件中）。这些信息存储在PostgreSQL中。
+1. **初始化**：部署SQLite和Tokilake服务器。在私有网络中，GPU机器上部署LLM推理服务器。在每个私有网络中部署Tokiame客户端（需能访问本地推理服务器）。
+2. **注册**：每个Tokiame客户端认证并连接到Tokilake服务器，注册其`命名空间`及其管理的本地推理服务器可用模型（具体配置在Tokiame的`model.toml`等文件中）。这些信息存储在SQLite中。
 3. **用户请求**：用户向任意Tokilake服务器发送OpenAI兼容API请求（如请求`my-lan-1:llama3`）。
 4. **路由与推理**：Tokilake验证请求，找到提供该模型（`llama3`）且已连接的Tokiame客户端（`my-lan-1`）。任务被安全转发至该客户端，Tokiame调用本地推理服务器API（如运行Llama 3的实例），获取结果后通过Tokilake返回给用户。
 
@@ -83,24 +83,18 @@ graph LR
 * **Rust & Cargo**：最新稳定版（用于Tokilake服务器）
 * **protoc**：3.19或更新版本（需与项目gRPC依赖兼容）
 * **Git**
-* **PostgreSQL服务器**（v12+）及**psql**客户端
+* **SQLite数据库**及**sqlite3**客户端
 * **LLM推理服务器**：在GPU机器上运行并暴露OpenAI兼容API（如[Ollama](https://ollama.com/)、[vLLM](https://vllm.ai/)）
 
-### 1. 设置PostgreSQL
+### 1. 设置SQLite
 
-推荐使用Docker简化部署：
-
-```bash
-docker run -d --name tokilake-postgres --restart unless-stopped --shm-size 512m \
-  -e TZ=UTC -e POSTGRES_PASSWORD=your_strong_password \
-  -p 5432:5432 postgres:14
-```
+推荐使用默认配置运行SQLite：
 
 *请使用强密码并根据生产需求配置数据库（用户、数据库名、弹性等）*
 *初始化数据库架构（详见`docs/DATABASE_SETUP.md`）：*
 
 ```bash
-# psql -h your_postgres_host -U your_user -d your_database_name < ./sql/schema.sql
+# sqlite3 your_database.db < ./sql/schema.sql
 ```
 
 ### 2. 设置LLM推理服务器
@@ -147,7 +141,7 @@ cd .. # 返回项目根目录
 将Tokilake服务器二进制文件（`target/release/tokilake`）部署到选定服务器。主要通过环境变量配置（如`DATABASE_URL`），监听地址可能有内部默认值。
 
 ```bash
-export DATABASE_URL="postgres://your_user:your_strong_password@your_postgres_host:5432/your_database_name"
+export DATABASE_URL="sqlite:./tokilake.db"
 ./target/release/tokilake
 # Tokilake服务器默认监听HTTP API端口（如8000）
 # 和Tokiame客户端的gRPC端口（如19982）
@@ -211,7 +205,7 @@ Tokilake可通过其`/v2/chat/completion`端点（或类似特定端点）作为
 
 * ✅ LLM聊天补全代理核心功能
 * ✅ 基于gRPC的Tokilake服务器和Tokiame客户端实现
-* ✅ 支持分布式Tokilake节点和持久化配置的PostgreSQL后端（命名空间、提供者认证信息、模型注册）
+* ✅ 支持分布式Tokilake节点和持久化配置的SQLite后端（命名空间、提供者认证信息、模型注册）
 * 🔜 **详细文档**：完整设置指南、Tokiame模型配置规范、提供者认证最佳实践及未来用户认证细节
 * 🔜 **终端用户认证与授权**：为访问Tokilake API网关的用户实现健壮认证（API密钥、OAuth等）
 * 🔜 **增强模型管理与发现**：改进模型标签、能力报告和更便捷的发现功能
