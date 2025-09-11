@@ -1,18 +1,18 @@
 // Code from aichat
 use crate::{
     error::Result,
-    tools::{create_done_frame, create_text_frame},
-};
-use crate::{
     requests::ChatCompletionRequest,
-    tools::{find_forward_clients, generate_completion_id, split_model},
+    tools::{
+        create_done_frame, create_text_frame, find_forward_clients, generate_completion_id,
+        split_model,
+    },
 };
 use async_stream::stream;
 use chrono::Utc;
-use common::proxy::chat_openai::{OpenAIClient, OpenAIClinetConfig};
 use common::{
     ToRandomIterator,
     data::ChatCompletionsData,
+    proxy::chat_openai::{OpenAIClient, OpenAIClinetConfig},
     stream::sse::{SseEvent, SseHandler},
 };
 use faststr::FastStr;

@@ -1,9 +1,11 @@
 pub use common::logging_stdout;
 use inference_server::InferenceServer;
 use std::net::SocketAddr;
-use volo_http::Address;
-use volo_http::server::{Router, Server};
-use volo_http::utils::Extension;
+use volo_http::{
+    Address,
+    server::{Router, Server},
+    utils::Extension,
+};
 
 pub mod error;
 pub mod handlers;

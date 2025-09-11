@@ -250,10 +250,11 @@ impl<'a> ChatCompletionRequestBuilder<'a> {
 }
 
 mod converts {
-    use super::chat_message::{ContentType, Role};
-    use super::{ChatMessage, ContentPart, ContentParts};
-    use crate::pb::ImageData;
-    use crate::pb::content_part::PartType;
+    use super::{
+        ChatMessage, ContentPart, ContentParts,
+        chat_message::{ContentType, Role},
+    };
+    use crate::pb::{ImageData, content_part::PartType};
     use common::messages::{Message, MessageContent, MessageContentPart, MessageRole};
     pub fn part_to_part(part: MessageContentPart) -> ContentPart {
         match part {

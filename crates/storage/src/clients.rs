@@ -1,5 +1,4 @@
-use crate::cache::KVCache;
-use crate::{Storage, error::Result};
+use crate::{Storage, cache::KVCache, error::Result};
 use common::clients::ForwardClient;
 use faststr::FastStr;
 use sqlx::prelude::FromRow;
@@ -35,15 +34,17 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
             c.namespace as "namespace!: FastStr", 
             c.api_base as "api_base!: FastStr", 
             c.api_key as "api_keys!: Vec<FastStr>",
-            array_remove(array_agg(m.name) FILTER (WHERE m.name IS NOT NULL), NULL) as "model_names!: Vec<FastStr>",
+            GROUP_CONCAT(m.name) as "model_names!: Vec<FastStr>",
             c.public as "public!: bool"
         FROM clients c
         LEFT JOIN models m ON c.id = m.client_id
         WHERE c.public = true
-        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key
+        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key, c.public
         ORDER BY c.id
         "#
-        ).fetch_all(&self.pool).await?;
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(records)
     }
@@ -69,24 +70,26 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
         }
 
         let client = sqlx::query_as!(
-        ForwardClient,
-        r#"
+            ForwardClient,
+            r#"
         SELECT 
             c.id, 
             c.type as "ty!: FastStr", 
             c.namespace as "namespace!: FastStr", 
             c.api_base as "api_base!: FastStr", 
             c.api_key as "api_keys!: Vec<FastStr>",
-            array_remove(array_agg(m.name) FILTER (WHERE m.name IS NOT NULL), NULL) as "model_names!: Vec<FastStr>",
+            GROUP_CONCAT(m.name) as "model_names!: Vec<FastStr>",
             c.public as "public!: bool"
         FROM clients c
         LEFT JOIN models m ON c.id = m.client_id
-        WHERE ($1::text IS NULL OR c.namespace = $1)
-        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key
+        WHERE ($1 IS NULL OR c.namespace = $1)
+        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key, c.public
         ORDER BY c.id
         "#,
-        namespace.as_ref()
-        ).fetch_optional(&self.pool).await?;
+            namespace.as_ref()
+        )
+        .fetch_optional(&self.pool)
+        .await?;
 
         if let Some(ref c) = client {
             self.cache.set(&c.namespace, c.clone()).await;
@@ -96,26 +99,26 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
 
     pub async fn get_clients(&self, client_name: Option<&str>) -> Result<Vec<ForwardClient>> {
         Ok(sqlx::query_as!(
-        ForwardClient,
-        r#"
+            ForwardClient,
+            r#"
         SELECT 
             c.id, 
             c.type as "ty!: FastStr", 
             c.namespace as "namespace!: FastStr", 
             c.api_base as "api_base!: FastStr", 
             c.api_key as "api_keys!: Vec<FastStr>",
-            array_remove(array_agg(m.name) FILTER (WHERE m.name IS NOT NULL), NULL) as "model_names!: Vec<FastStr>",
+            GROUP_CONCAT(m.name) as "model_names!: Vec<FastStr>",
             c.public as "public!: bool"
         FROM clients c
         LEFT JOIN models m ON c.id = m.client_id
-        WHERE ($1::text IS NULL OR c.namespace = $1)
-        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key
+        WHERE ($1 IS NULL OR c.namespace = $1)
+        GROUP BY c.id, c.type, c.namespace, c.api_base, c.api_key, c.public
         ORDER BY c.id
         "#,
-        client_name
-    )
-    .fetch_all(&self.pool)
-    .await?)
+            client_name
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
 
     pub async fn get_client_by_name(&self, name: &str) -> Result<Option<ForwardClient>> {

@@ -1,4 +1,3 @@
-mod auth;
 mod cache;
 mod clients;
 
@@ -7,25 +6,25 @@ use cache::KVCache;
 pub use cache::lru::ClientCache;
 use common::clients::ForwardClient;
 use error::{Error, Result};
-use sqlx::{PgPool, migrate::MigrateDatabase, postgres::PgPoolOptions};
+use sqlx::{SqlitePool, migrate::MigrateDatabase, sqlite::SqlitePoolOptions};
 use std::time::Duration;
 use tokio::time::{self, Instant};
 use tracing::{debug, info};
 
 #[derive(Clone)]
 pub struct Storage<C> {
-    pool:  sqlx::PgPool,
+    pool:  sqlx::SqlitePool,
     cache: C,
 }
 
 impl<C: KVCache<ForwardClient>> Storage<C> {
     pub async fn new(database_url: &str) -> Result<Self> {
-        if !sqlx::Postgres::database_exists(database_url).await? {
-            sqlx::Postgres::create_database(database_url).await?;
+        if !sqlx::Sqlite::database_exists(database_url).await? {
+            sqlx::Sqlite::create_database(database_url).await?;
         }
 
         debug!("Connecting to database: {}", database_url);
-        let pool = PgPoolOptions::new()
+        let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect(database_url)
             .await?;
@@ -47,7 +46,7 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
         Ok(storage)
     }
     pub async fn start_check_db_health(
-        pool: PgPool,
+        pool: SqlitePool,
         interval_sec: u64,
         query_timeout_sec: u64,
     ) -> Result<()> {
@@ -82,13 +81,12 @@ impl<C: KVCache<ForwardClient>> Storage<C> {
 
 #[cfg(test)]
 mod tests {
-    use sqlx::postgres::PgPoolOptions;
+    use sqlx::sqlite::SqlitePoolOptions;
     use std::env;
-    pub async fn setup_db() -> sqlx::PgPool {
-        let database_url = env::var("DATABASE_URL")
-            .unwrap_or("postgres://postgres:123456@127.0.0.1:5432/tokilake".into());
+    pub async fn setup_db() -> sqlx::SqlitePool {
+        let database_url = env::var("DATABASE_URL").unwrap_or("sqlite::memory:".into());
 
-        PgPoolOptions::new()
+        SqlitePoolOptions::new()
             .max_connections(5)
             .connect(&database_url)
             .await

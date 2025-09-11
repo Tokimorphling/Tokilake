@@ -1,6 +1,4 @@
-use rand::rng;
-use rand::rngs::ThreadRng;
-use rand::seq::IndexedRandom;
+use rand::{rng, rngs::ThreadRng, seq::IndexedRandom};
 
 pub struct RandomElementIterator<'a, T> {
     slice: &'a [T],

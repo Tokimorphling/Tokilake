@@ -1,27 +1,26 @@
-use crate::pb::control_command::CommandType;
-use crate::pb::{
-    Acknowledgement, TokiameMessage, TokilakeMessage, tokiame_message::Payload as TokiamePayload,
-    tokilake_message::Payload as TokilakePayload,
+use crate::{
+    InferenceService, MakeMessage,
+    pb::{
+        Acknowledgement, ControlCommand, TokiameMessage, TokilakeCoordinatorService,
+        TokilakeCoordinatorServiceServer, TokilakeMessage, control_command::CommandType,
+        tokiame_message::Payload as TokiamePayload, tokilake_message::Payload as TokilakePayload,
+    },
 };
-use crate::pb::{ControlCommand, TokilakeCoordinatorService, TokilakeCoordinatorServiceServer};
-use crate::{InferenceService, MakeMessage};
-use common::data::ChatCompletionsData;
-use common::proxy::GrpcOriginalPayload;
+use common::{data::ChatCompletionsData, proxy::GrpcOriginalPayload};
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt};
 use serde_json::json;
-use std::net::SocketAddr;
-use std::result::Result;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{net::SocketAddr, result::Result, sync::Arc, time::Duration};
 use storage::{ClientCache, Storage};
 use tokio::sync::mpsc; // mpsc::Sender and mpsc::UnboundedSender are here
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream; // ReceiverStream is also here if needed
 use tracing::{debug, error, info, warn};
 use volo::FastStr;
-use volo_grpc::server::{Server, ServiceBuilder};
-use volo_grpc::{BoxStream, RecvStream, Request, Response, Status};
+use volo_grpc::{
+    BoxStream, RecvStream, Request, Response, Status,
+    server::{Server, ServiceBuilder},
+};
 
 const TOKAME_SEND_TIMEOUT: Duration = Duration::from_millis(2000);
 

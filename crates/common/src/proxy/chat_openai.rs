@@ -1,7 +1,7 @@
-use crate::error::{Error, Result};
 use crate::{
     RequestBuilder,
     data::{ChatCompletionsData, RequestData},
+    error::{Error, Result},
     stream::sse::{SseHandler, SseMmessage, sse_stream},
 };
 use reqwest::Client;

@@ -1,21 +1,16 @@
 use super::chat_completion::ResEvent;
-use crate::error::Result;
-use crate::handlers::chat_completion::convert_body_to_data;
-use crate::requests::ChatCompletionRequest;
-use crate::tools::create_done_frame;
-use crate::tools::create_text_frame;
-use crate::tools::generate_completion_id;
-use crate::tools::generate_task_id;
+use crate::{
+    error::Result,
+    handlers::chat_completion::convert_body_to_data,
+    requests::ChatCompletionRequest,
+    tools::{create_done_frame, create_text_frame, generate_completion_id, generate_task_id},
+};
 use async_stream::stream;
 use chrono::Utc;
 use common::proxy::GrpcOriginalPayload;
 use faststr::FastStr;
-use futures_util::Stream;
-use futures_util::StreamExt;
-use futures_util::pin_mut;
-use inference_server::InferenceServer;
-use inference_server::InferenceService;
-use inference_server::map_to_sse_stream;
+use futures_util::{Stream, StreamExt, pin_mut};
+use inference_server::{InferenceServer, InferenceService, map_to_sse_stream};
 use reqwest::StatusCode;
 use std::sync::Arc;
 use tracing::info;

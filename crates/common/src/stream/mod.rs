@@ -1,4 +1,3 @@
-
 pub mod sse;
 
 pub trait ChatCompletion {
