@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +15,14 @@ import (
 )
 
 func main() {
+	configPath := parseFlags()
+	if configPath != "" {
+		if err := os.Setenv("TOKIAME_CONFIG", configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "set TOKIAME_CONFIG failed: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, tokiameLogLevel(), true)))
 
 	config, err := tokilake.LoadClientConfigFromEnv()
@@ -47,4 +57,18 @@ func tokiameLogLevel() slog.Level {
 		level = "info"
 	}
 	return log.StirngLevel(level)
+}
+
+func parseFlags() string {
+	var (
+		configPath      string
+		configPathShort string
+	)
+	flag.StringVar(&configPath, "config", "", "specify the tokiame JSON config file path")
+	flag.StringVar(&configPathShort, "c", "", "specify the tokiame JSON config file path")
+	flag.Parse()
+	if strings.TrimSpace(configPath) != "" {
+		return strings.TrimSpace(configPath)
+	}
+	return strings.TrimSpace(configPathShort)
 }

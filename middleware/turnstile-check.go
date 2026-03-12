@@ -69,6 +69,7 @@ func TurnstileCheck() gin.HandlerFunc {
 			session.Set("turnstile", true)
 			err = session.Save()
 			if err != nil {
+				logger.SysError("failed to save turnstile session: " + err.Error())
 				c.JSON(http.StatusOK, gin.H{
 					"message": "无法保存会话信息，请重试",
 					"success": false,

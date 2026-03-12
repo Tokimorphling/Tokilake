@@ -9,6 +9,7 @@ import (
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/limit"
+	"one-api/common/logger"
 	"one-api/common/utils"
 	"one-api/model"
 	"strconv"
@@ -67,12 +68,19 @@ func Login(c *gin.Context) {
 // setup session & cookies and then return user info
 func setupLogin(user *model.User, c *gin.Context) {
 	session := sessions.Default(c)
+	// Clear temporary auth flow data before saving the long-lived login session.
+	session.Delete("webauthn_registration_session")
+	session.Delete("webauthn_alias")
+	session.Delete("webauthn_login_session")
+	session.Delete("webauthn_user_id")
+	session.Delete("oauth_state")
 	session.Set("id", user.Id)
 	session.Set("username", user.Username)
 	session.Set("role", user.Role)
 	session.Set("status", user.Status)
 	err := session.Save()
 	if err != nil {
+		logger.SysError("failed to save login session: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{
 			"message": "无法保存会话信息，请重试",
 			"success": false,
@@ -104,6 +112,7 @@ func Logout(c *gin.Context) {
 	session.Clear()
 	err := session.Save()
 	if err != nil {
+		logger.SysError("failed to clear login session: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{
 			"message": err.Error(),
 			"success": false,

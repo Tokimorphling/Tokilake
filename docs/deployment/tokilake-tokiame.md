@@ -73,6 +73,12 @@ export TOKIAME_MODEL_TARGETS='{
 go run ./cmd/tokiame
 ```
 
+也可以直接指定 JSON 配置文件：
+
+```bash
+go run ./cmd/tokiame --config ./dist/tokiame.json
+```
+
 ## 环境变量说明
 
 - `TOKIAME_GATEWAY_URL`: Tokilake websocket 地址。
@@ -85,6 +91,7 @@ go run ./cmd/tokiame
 - `TOKIAME_HEARTBEAT_INTERVAL_SECONDS`: 可选，心跳间隔。
 - `TOKIAME_RECONNECT_DELAY_SECONDS`: 可选，断线重连间隔。
 - `TOKIAME_CONFIG`: 可选，JSON 配置文件路径；环境变量优先级更高。
+- `--config` / `-c`: 可选，等价于设置 `TOKIAME_CONFIG`。
 
 `TOKIAME_MODEL_TARGETS` 支持的字段：
 

@@ -15,7 +15,9 @@ func InitConf() {
 	Language = viper.GetString("language")
 	IsMasterNode = viper.GetString("node_type") != "slave"
 	RequestInterval = time.Duration(viper.GetInt("polling_interval")) * time.Second
-	SessionSecret = utils.GetOrDefault("session_secret", SessionSecret)
+	if sessionSecret := strings.TrimSpace(utils.GetOrDefault("session_secret", SessionSecret)); sessionSecret != "" {
+		SessionSecret = sessionSecret
+	}
 	UserInvoiceMonth = viper.GetBool("user_invoice_month")
 	GitHubProxy = viper.GetString("github_proxy")
 	MCP_ENABLE = viper.GetBool("mcp.enable") != false
