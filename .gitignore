@@ -18,3 +18,7 @@ test.yaml
 one-api
 _output
 .claude
+
+/target
+Cargo.lock
+/plans
