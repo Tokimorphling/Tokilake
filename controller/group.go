@@ -3,18 +3,28 @@ package controller
 import (
 	"net/http"
 	"one-api/model"
+	"one-api/service"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 )
 
 func GetGroups(c *gin.Context) {
-	groupNames := make([]string, 0)
-
-	userGroup := model.GlobalUserGroupRatio.GetAll()
-
-	for symbol, _ := range userGroup {
+	groupSet := make(map[string]struct{})
+	for symbol := range model.GlobalUserGroupRatio.GetAll() {
+		groupSet[symbol] = struct{}{}
+	}
+	privateGroups, err := model.GetAllActivePrivateGroupSlugs()
+	if err == nil {
+		for _, groupSlug := range privateGroups {
+			groupSet[groupSlug] = struct{}{}
+		}
+	}
+	groupNames := make([]string, 0, len(groupSet))
+	for symbol := range groupSet {
 		groupNames = append(groupNames, symbol)
 	}
+	sort.Strings(groupNames)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -31,17 +41,18 @@ func GetUserGroupRatio(c *gin.Context) {
 		userSymbol, _ = model.CacheGetUserGroup(userId)
 	}
 
-	groupRatio := model.GlobalUserGroupRatio.GetAll()
-	UserGroup := make(map[string]*model.UserGroup)
-	for k, v := range groupRatio {
-		if v.Public || k == userSymbol {
-			UserGroup[k] = v
-		}
+	userGroups, err := service.GetUserUsableGroupsForUser(userId, userSymbol)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    UserGroup,
+		"data":    userGroups,
 	})
 }

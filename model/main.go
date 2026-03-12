@@ -179,12 +179,32 @@ func InitDB() (err error) {
 			return err
 		}
 
+		err = db.AutoMigrate(&PrivateGroup{})
+		if err != nil {
+			return err
+		}
+
+		err = db.AutoMigrate(&PrivateGroupGrant{})
+		if err != nil {
+			return err
+		}
+
+		err = db.AutoMigrate(&PrivateGroupInviteCode{})
+		if err != nil {
+			return err
+		}
+
 		err = db.AutoMigrate(&ModelOwnedBy{})
 		if err != nil {
 			return err
 		}
 
 		err = db.AutoMigrate(&ModelInfo{})
+		if err != nil {
+			return err
+		}
+
+		err = db.AutoMigrate(&TokilakeWorkerNode{})
 		if err != nil {
 			return err
 		}

@@ -3,7 +3,7 @@ import { useTheme } from '@mui/material/styles';
 import { Avatar, Box, ButtonBase, Menu, MenuItem, Typography } from '@mui/material';
 import i18nList from 'i18n/i18nList';
 import useI18n from 'hooks/useI18n';
-import Flags from 'country-flag-icons/react/3x2';
+import { Icon } from '@iconify/react';
 
 export default function I18nButton() {
   const theme = useTheme();
@@ -23,16 +23,6 @@ export default function I18nButton() {
     i18n.changeLanguage(lng);
     handleMenuClose();
   };
-
-  // 获取当前语言的国家代码
-  const getCurrentCountryCode = () => {
-    const currentLang = i18n.language || 'zh_CN';
-    const langItem = i18nList.find((item) => item.lng === currentLang) || i18nList[0];
-    return langItem.countryCode;
-  };
-
-  // 动态获取当前语言的国旗组件
-  const CurrentFlag = Flags[getCurrentCountryCode()];
 
   return (
     <Box
@@ -63,21 +53,17 @@ export default function I18nButton() {
           }}
           color="inherit"
         >
-          {CurrentFlag && (
-            <Box
-              sx={{
-                width: '1.8rem',
-                height: '1.4rem',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative'
-              }}
-            >
-              <CurrentFlag style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            </Box>
-          )}
+          <Box
+            sx={{
+              width: '1.8rem',
+              height: '1.8rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Icon icon="mdi:language" width="24" height="24" color={theme.palette.text.primary} />
+          </Box>
         </Avatar>
       </ButtonBase>
       <Menu
@@ -93,37 +79,23 @@ export default function I18nButton() {
           horizontal: 'center'
         }}
       >
-        {i18nList.map((item) => {
-          const FlagComponent = Flags[item.countryCode];
-          return (
-            <MenuItem
-              key={item.lng}
-              onClick={() => handleLanguageChange(item.lng)}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1
-              }}
-            >
-              {FlagComponent && (
-                <Box
-                  sx={{
-                    width: '1.45rem',
-                    height: '1.125rem',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    position: 'relative'
-                  }}
-                >
-                  <FlagComponent style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                </Box>
-              )}
-              <Typography variant="body1">{item.name}</Typography>
-            </MenuItem>
-          );
-        })}
+        {i18nList.map((item) => (
+          <MenuItem
+            key={item.lng}
+            onClick={() => handleLanguageChange(item.lng)}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              px: 2,
+              py: 1.2,
+              minWidth: '120px'
+            }}
+          >
+            <Typography variant="body1" sx={{ fontWeight: i18n.language === item.lng ? 600 : 400 }}>
+              {item.name}
+            </Typography>
+          </MenuItem>
+        ))}
       </Menu>
     </Box>
   );

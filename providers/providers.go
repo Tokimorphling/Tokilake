@@ -37,6 +37,7 @@ import (
 	"one-api/providers/stabilityAI"
 	"one-api/providers/suno"
 	"one-api/providers/tencent"
+	"one-api/providers/tokiame"
 	"one-api/providers/vertexai"
 	"one-api/providers/xAI"
 	"one-api/providers/xunfei"
@@ -93,6 +94,7 @@ func init() {
 		config.ChannelTypeAzureDatabricks: azuredatabricks.AzureDatabricksProviderFactory{},
 		config.ChannelTypeAzureV1:         azure_v1.AzureV1ProviderFactory{},
 		config.ChannelTypeXAI:             xAI.XAIProviderFactory{},
+		config.ChannelTypeTokiame:         tokiame.ProviderFactory{},
 	}
 }
 

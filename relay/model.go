@@ -9,6 +9,7 @@ import (
 	"one-api/model"
 	"one-api/providers/claude"
 	"one-api/providers/gemini"
+	"one-api/service"
 	"one-api/types"
 	"sort"
 	"strings"
@@ -236,11 +237,21 @@ type AvailableModelResponse struct {
 
 func AvailableModel(c *gin.Context) {
 	groupName := c.GetString("group")
+	userId := c.GetInt("id")
+	usableGroups, err := service.GetUserUsableGroupsForUser(userId, groupName)
+	if err != nil {
+		common.APIRespondWithError(c, http.StatusOK, err)
+		return
+	}
+	groups := make([]string, 0, len(usableGroups))
+	for group := range usableGroups {
+		groups = append(groups, group)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    getAvailableModels(groupName),
+		"data":    getAvailableModelsByGroups(groups),
 	})
 }
 
@@ -249,30 +260,33 @@ func GetAvailableModels(groupName string) map[string]*AvailableModelResponse {
 }
 
 func getAvailableModels(groupName string) map[string]*AvailableModelResponse {
-	publicModels := model.ChannelGroup.GetModelsGroups()
 	publicGroups := model.GlobalUserGroupRatio.GetPublicGroupList()
 	if groupName != "" && !utils.Contains(groupName, publicGroups) {
 		publicGroups = append(publicGroups, groupName)
 	}
+	return getAvailableModelsByGroups(publicGroups)
+}
 
+func getAvailableModelsByGroups(groups []string) map[string]*AvailableModelResponse {
+	publicModels := model.ChannelGroup.GetModelsGroups()
 	availableModels := make(map[string]*AvailableModelResponse, len(publicModels))
 
 	for modelName, group := range publicModels {
-		groups := []string{}
-		for _, publicGroup := range publicGroups {
-			if group[publicGroup] {
-				groups = append(groups, publicGroup)
+		modelGroups := make([]string, 0, len(groups))
+		for _, accessibleGroup := range groups {
+			if group[accessibleGroup] {
+				modelGroups = append(modelGroups, accessibleGroup)
 			}
 		}
 
-		if len(groups) == 0 {
+		if len(modelGroups) == 0 {
 			continue
 		}
 
 		if _, ok := availableModels[modelName]; !ok {
 			price := model.PricingInstance.GetPrice(modelName)
 			availableModels[modelName] = &AvailableModelResponse{
-				Groups:  groups,
+				Groups:  modelGroups,
 				OwnedBy: *getModelOwnedBy(price.ChannelType),
 				Price:   price,
 			}

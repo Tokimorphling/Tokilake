@@ -23,9 +23,10 @@ const Home = () => {
         showError(message);
         setHomePageContent(t('home.loadingErr'));
       }
-      setHomePageContentLoaded(true);
     } catch (error) {
-      return;
+      console.error(error);
+    } finally {
+      setHomePageContentLoaded(true);
     }
   };
 

@@ -18,6 +18,10 @@ lastUpdated: true
 环境变量 > 配置文件
 :::
 
+## 扩展组件
+
+- [Tokilake 与 Tokiame](./tokilake-tokiame.md): 使用内置网关接入自托管模型 worker。
+
 ### 必要配置
 
 - `USER_TOKEN_SECRET`: 必填，用于生成用户令牌的密钥

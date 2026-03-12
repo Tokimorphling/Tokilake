@@ -13,24 +13,24 @@ export default function themePalette(theme) {
       white: '#FFFFFF'
     },
     primary: {
-      lighter: theme.colors?.primary200 || '#C8FAD6',
+      lighter: theme.colors?.primary200,
       light: theme.colors?.primaryLight,
       main: theme.colors?.primaryMain,
       dark: theme.colors?.primaryDark,
       darker: theme.colors?.primary800,
       200: theme.colors?.primary200,
       800: theme.colors?.primary800,
-      contrastText: '#FFFFFF'
+      contrastText: '#000000'
     },
     secondary: {
-      lighter: theme.colors?.secondary200 || '#EFD6FF',
+      lighter: theme.colors?.secondary200,
       light: theme.colors?.secondaryLight,
       main: theme.colors?.secondaryMain,
       dark: theme.colors?.secondaryDark,
       darker: theme.colors?.secondary800,
       200: theme.colors?.secondary200,
       800: theme.colors?.secondary800,
-      contrastText: '#FFFFFF'
+      contrastText: '#000000'
     },
     info: {
       lighter: '#CAFDF5',

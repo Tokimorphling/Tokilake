@@ -6,6 +6,7 @@ import (
 	"one-api/common/config"
 	"one-api/common/utils"
 	"one-api/model"
+	"one-api/service"
 	"strings"
 
 	"github.com/gin-contrib/sessions"
@@ -128,6 +129,29 @@ func tokenAuth(c *gin.Context, key string) {
 	if err != nil {
 		abortWithMessage(c, http.StatusUnauthorized, err.Error())
 		return
+	}
+	userGroup, _ := model.CacheGetUserGroup(token.UserId)
+	if token.Group != "" {
+		allowed, err := service.GroupInUserUsableGroupsForUser(token.UserId, userGroup, token.Group)
+		if err != nil {
+			abortWithMessage(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !allowed {
+			abortWithMessage(c, http.StatusForbidden, "当前令牌无权使用指定分组")
+			return
+		}
+	}
+	if token.BackupGroup != "" {
+		allowed, err := service.GroupInUserUsableGroupsForUser(token.UserId, userGroup, token.BackupGroup)
+		if err != nil {
+			abortWithMessage(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !allowed {
+			abortWithMessage(c, http.StatusForbidden, "当前令牌无权使用备用分组")
+			return
+		}
 	}
 
 	c.Set("id", token.UserId)

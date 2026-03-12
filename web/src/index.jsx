@@ -14,6 +14,11 @@ import config from './config';
 import reportWebVitals from 'reportWebVitals';
 // ==============================|| REACT DOM RENDER  ||============================== //
 
+const link = document.createElement('link');
+link.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Inter:wght@100..900&display=swap';
+link.rel = 'stylesheet';
+document.head.appendChild(link);
+
 const container = document.getElementById('root');
 const root = createRoot(container); // createRoot(container!) if you use TypeScript
 root.render(

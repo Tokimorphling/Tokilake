@@ -13,6 +13,7 @@ const icons = {
   IconBrandPaypal: () => <Icon width={20} icon="solar:wallet-money-bold-duotone" />,
   IconCoins: () => <Icon width={20} icon="solar:hand-money-bold-duotone" />,
   IconUsers: () => <Icon width={20} icon="solar:users-group-rounded-bold-duotone" />,
+  IconUsersPlus: () => <Icon width={20} icon="solar:users-group-two-rounded-bold-duotone" />,
   IconModel: () => <Icon width={20} icon="mingcute:ai-fill" />,
   IconInfo: () => <Icon width={20} icon="solar:info-circle-bold-duotone" />
 };
@@ -128,6 +129,14 @@ const Setting = {
       type: 'item',
       url: '/panel/token',
       icon: icons.IconKey,
+      breadcrumbs: false
+    },
+    {
+      id: '私有分组',
+      title: '私有分组',
+      type: 'item',
+      url: '/panel/private-groups',
+      icon: icons.IconUsersPlus,
       breadcrumbs: false
     },
 

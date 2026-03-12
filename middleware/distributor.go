@@ -48,13 +48,27 @@ func (gd *GroupDistributor) determineEffectiveGroup(tokenGroup, backupGroup, use
 
 // setGroupRatio 设置分组倍率
 func (gd *GroupDistributor) setGroupRatio(group string) error {
+	if group == "" {
+		abortWithMessage(gd.context, http.StatusForbidden, "分组不存在")
+		return fmt.Errorf("分组不存在")
+	}
 	groupRatio := model.GlobalUserGroupRatio.GetBySymbol(group)
-	if groupRatio == nil {
+	if groupRatio != nil {
+		gd.context.Set("group_ratio", groupRatio.Ratio)
+		return nil
+	}
+
+	active, err := model.IsActivePrivateGroupSlug(group)
+	if err != nil {
+		abortWithMessage(gd.context, http.StatusInternalServerError, err.Error())
+		return err
+	}
+	if !active {
 		abortWithMessage(gd.context, http.StatusForbidden, fmt.Sprintf("分组 %s 不存在", group))
 		return fmt.Errorf("分组 %s 不存在", group)
 	}
 
-	gd.context.Set("group_ratio", groupRatio.Ratio)
+	gd.context.Set("group_ratio", 1.0)
 	return nil
 }
 

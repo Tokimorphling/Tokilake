@@ -7,6 +7,7 @@ import (
 	"one-api/common/config"
 	"one-api/common/utils"
 	"one-api/model"
+	"one-api/service"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -473,38 +474,30 @@ func UpdateTokenByAdmin(c *gin.Context) {
 
 // validateTokenGroupForUser 验证用户组是否对指定用户有效
 func validateTokenGroupForUser(tokenGroup string, userId int) error {
+	if tokenGroup == "" {
+		return nil
+	}
 	userGroup, _ := model.CacheGetUserGroup(userId)
 	if userGroup == "" {
 		return errors.New("获取用户组信息失败")
 	}
-
-	groupRatio := model.GlobalUserGroupRatio.GetBySymbol(tokenGroup)
-	if groupRatio == nil {
-		return errors.New("无效的用户组")
+	allowed, err := service.GroupInUserUsableGroupsForUser(userId, userGroup, tokenGroup)
+	if err != nil {
+		return err
 	}
-
-	if !groupRatio.Public && userGroup != tokenGroup {
+	if !allowed {
 		return errors.New("目标用户无权使用指定的分组")
 	}
-
 	return nil
 }
 
 func validateTokenGroup(tokenGroup string, userId int) error {
-	userGroup, _ := model.CacheGetUserGroup(userId)
-	if userGroup == "" {
-		return errors.New("获取用户组信息失败")
+	if err := validateTokenGroupForUser(tokenGroup, userId); err != nil {
+		if err.Error() == "目标用户无权使用指定的分组" {
+			return errors.New("当前用户无权使用指定的分组")
+		}
+		return err
 	}
-
-	groupRatio := model.GlobalUserGroupRatio.GetBySymbol(tokenGroup)
-	if groupRatio == nil {
-		return errors.New("无效的用户组")
-	}
-
-	if !groupRatio.Public && userGroup != tokenGroup {
-		return errors.New("当前用户组无权使用指定的分组")
-	}
-
 	return nil
 }
 

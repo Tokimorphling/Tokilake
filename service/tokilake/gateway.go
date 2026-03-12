@@ -1,0 +1,734 @@
+package tokilake
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"slices"
+	"strings"
+	"time"
+
+	"one-api/common/config"
+	"one-api/common/logger"
+	"one-api/model"
+
+	"github.com/gorilla/websocket"
+	"github.com/xtaci/smux"
+	"gorm.io/gorm"
+)
+
+const (
+	registerTimeout   = 30 * time.Second
+	heartbeatTimeout  = 45 * time.Second
+	tokiameNamePrefix = "Tokiame"
+)
+
+type RegisterResult struct {
+	WorkerID    int
+	ChannelID   int
+	Namespace   string
+	Group       string
+	Models      []string
+	BackendType string
+	Status      int
+}
+
+func ExtractConnectToken(r *http.Request) (string, error) {
+	key := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(key), "bearer ") {
+		key = strings.TrimSpace(key[7:])
+	}
+	if key == "" {
+		key = strings.TrimSpace(r.URL.Query().Get("access_token"))
+	}
+	if key == "" {
+		key = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+	if key == "" {
+		return "", errors.New("missing authorization token")
+	}
+	key = strings.TrimPrefix(key, "sk-")
+	if key == "" {
+		return "", errors.New("missing authorization token")
+	}
+	return key, nil
+}
+
+func AuthenticateConnectRequest(r *http.Request) (string, *model.Token, error) {
+	tokenKey, err := ExtractConnectToken(r)
+	if err != nil {
+		return "", nil, err
+	}
+	token, err := model.ValidateUserToken(tokenKey)
+	if err != nil {
+		return "", nil, err
+	}
+	return tokenKey, token, nil
+}
+
+func HandleGatewayConnection(ctx context.Context, wsConn *websocket.Conn, token *model.Token, tokenKey string, remoteAddr string) error {
+	streamConn := newWebsocketStreamConn(wsConn)
+	smuxConfig := smux.DefaultConfig()
+	smuxConfig.KeepAliveDisabled = true
+
+	smuxSession, err := smux.Server(streamConn, smuxConfig)
+	if err != nil {
+		return fmt.Errorf("create smux server: %w", err)
+	}
+
+	manager := GetSessionManager()
+	session := manager.NewGatewaySession(token, tokenKey, remoteAddr, smuxSession)
+	defer func() {
+		if cleanupErr := cleanupGatewaySession(session); cleanupErr != nil {
+			logger.SysError(fmt.Sprintf("tokilake cleanup failed: session_id=%d err=%v", session.ID, cleanupErr))
+		}
+	}()
+
+	smuxSession.SetDeadline(time.Now().Add(registerTimeout))
+	controlStream, err := smuxSession.AcceptStream()
+	if err != nil {
+		return fmt.Errorf("accept control stream: %w", err)
+	}
+	smuxSession.SetDeadline(time.Time{})
+
+	codec := newControlCodec(controlStream)
+	session.Control = controlStream
+	session.controlCodec = codec
+	return serveControlStream(ctx, manager, session, controlStream, codec)
+}
+
+func serveControlStream(ctx context.Context, manager *SessionManager, session *GatewaySession, controlStream ioReadWriteDeadlineCloser, codec *controlCodec) error {
+	for {
+		if session.WorkerID == 0 {
+			_ = controlStream.SetReadDeadline(time.Now().Add(registerTimeout))
+		} else {
+			_ = controlStream.SetReadDeadline(time.Now().Add(heartbeatTimeout))
+		}
+
+		msg, err := codec.ReadMessage()
+		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return nil
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return fmt.Errorf("control stream timeout: %w", err)
+			}
+			return err
+		}
+
+		switch msg.Type {
+		case ControlMessageTypeRegister:
+			if session.WorkerID != 0 {
+				if writeErr := writeControlError(codec, msg.RequestID, "register_already_completed", "register message already handled"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("duplicate register message")
+			}
+			if msg.Register == nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "register_payload_missing", "register payload is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("register payload is required")
+			}
+			result, registerErr := registerWorkerSession(manager, session, msg.Register)
+			if registerErr != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "register_failed", registerErr.Error()); writeErr != nil {
+					return writeErr
+				}
+				return registerErr
+			}
+			if writeErr := codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeAck,
+				RequestID: msg.RequestID,
+				Ack: &AckMessage{
+					Message:   "register_ok",
+					Namespace: result.Namespace,
+					WorkerID:  result.WorkerID,
+					ChannelID: result.ChannelID,
+				},
+			}); writeErr != nil {
+				return writeErr
+			}
+		case ControlMessageTypeHeartbeat:
+			if session.WorkerID == 0 {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_registered", "register is required before heartbeat"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("heartbeat received before register")
+			}
+			if msg.Heartbeat == nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "heartbeat_payload_missing", "heartbeat payload is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("heartbeat payload is required")
+			}
+			if err = updateWorkerHeartbeat(session, msg.Heartbeat); err != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "heartbeat_failed", err.Error()); writeErr != nil {
+					return writeErr
+				}
+				return err
+			}
+			if writeErr := codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeAck,
+				RequestID: msg.RequestID,
+				Ack: &AckMessage{
+					Message:   "heartbeat_ok",
+					Namespace: session.Namespace,
+					WorkerID:  session.WorkerID,
+					ChannelID: session.ChannelID,
+				},
+			}); writeErr != nil {
+				return writeErr
+			}
+		case ControlMessageTypeModelsSync:
+			if session.WorkerID == 0 {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_registered", "register is required before models_sync"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("models_sync received before register")
+			}
+			if msg.ModelsSync == nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "models_payload_missing", "models_sync payload is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("models_sync payload is required")
+			}
+			if err = syncWorkerModels(session, msg.ModelsSync); err != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "models_sync_failed", err.Error()); writeErr != nil {
+					return writeErr
+				}
+				return err
+			}
+			if writeErr := codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeAck,
+				RequestID: msg.RequestID,
+				Ack: &AckMessage{
+					Message:   "models_sync_ok",
+					Namespace: session.Namespace,
+					WorkerID:  session.WorkerID,
+					ChannelID: session.ChannelID,
+				},
+			}); writeErr != nil {
+				return writeErr
+			}
+		case ControlMessageTypeAck:
+			continue
+		case ControlMessageTypeError:
+			if msg.Error != nil {
+				logger.SysLog(fmt.Sprintf("tokiame reported error: namespace=%s code=%s message=%s", session.Namespace, msg.Error.Code, msg.Error.Message))
+			}
+		default:
+			if writeErr := writeControlError(codec, msg.RequestID, "unsupported_message_type", fmt.Sprintf("unsupported message type: %s", msg.Type)); writeErr != nil {
+				return writeErr
+			}
+			return fmt.Errorf("unsupported control message type: %s", msg.Type)
+		}
+	}
+}
+
+func SendCancelRequest(session *GatewaySession, targetRequestID string, reason string) error {
+	if session == nil {
+		return errors.New("session is nil")
+	}
+	if strings.TrimSpace(targetRequestID) == "" {
+		return errors.New("target request id is required")
+	}
+	if session.controlCodec == nil {
+		return errors.New("control stream is unavailable")
+	}
+	return session.controlCodec.WriteMessage(&ControlMessage{
+		Type:      ControlMessageTypeCancelRequest,
+		RequestID: fmt.Sprintf("%s:cancel:%d", session.Namespace, time.Now().UnixNano()),
+		CancelRequest: &CancelRequestMessage{
+			TargetRequestID: targetRequestID,
+			Reason:          reason,
+		},
+	})
+}
+
+func registerWorkerSession(manager *SessionManager, session *GatewaySession, register *RegisterMessage) (*RegisterResult, error) {
+	namespace := strings.TrimSpace(register.Namespace)
+	if namespace == "" {
+		return nil, errors.New("namespace is required")
+	}
+
+	if err := manager.ClaimNamespace(session, namespace); err != nil {
+		return nil, err
+	}
+
+	result, err := upsertWorkerAndChannel(session, register)
+	if err != nil {
+		manager.Release(session)
+		return nil, err
+	}
+
+	manager.BindChannel(session, result.WorkerID, result.ChannelID, result.Group, result.Models, result.BackendType, result.Status)
+	model.ChannelGroup.Load()
+	model.GlobalUserGroupRatio.Load()
+	return result, nil
+}
+
+func updateWorkerHeartbeat(session *GatewaySession, heartbeat *HeartbeatMessage) error {
+	status := normalizeWorkerStatus(heartbeat.Status)
+	models := session.Models
+	if len(heartbeat.CurrentModels) > 0 {
+		models = normalizeModels(heartbeat.CurrentModels)
+	}
+
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		node := &model.TokilakeWorkerNode{}
+		if err := tx.First(node, "id = ?", session.WorkerID).Error; err != nil {
+			return err
+		}
+		channel := &model.Channel{}
+		if err := tx.First(channel, "id = ?", session.ChannelID).Error; err != nil {
+			return err
+		}
+
+		now := time.Now().Unix()
+		node.Status = status
+		node.LastHeartbeat = now
+		node.UpdatedAt = now
+		if heartbeat.NodeName != "" {
+			node.NodeName = strings.TrimSpace(heartbeat.NodeName)
+		}
+		if heartbeat.HardwareInfo != nil {
+			node.SetHardwareInfo(heartbeat.HardwareInfo)
+		}
+		if len(models) > 0 {
+			node.SetModels(models)
+		}
+		if err := tx.Model(node).Updates(map[string]any{
+			"node_name":      node.NodeName,
+			"status":         node.Status,
+			"models":         node.Models,
+			"hardware_info":  node.HardwareInfo,
+			"last_heartbeat": node.LastHeartbeat,
+			"updated_at":     node.UpdatedAt,
+		}).Error; err != nil {
+			return err
+		}
+
+		channel.Status = channelStatusFromWorkerStatus(status)
+		updates := map[string]any{
+			"status": channel.Status,
+		}
+		if len(models) > 0 {
+			channel.Models = strings.Join(models, ",")
+			updates["models"] = channel.Models
+		}
+		if err := tx.Model(channel).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		session.Status = status
+		if len(models) > 0 {
+			session.Models = models
+		}
+		return nil
+	})
+	if err == nil {
+		model.ChannelGroup.Load()
+	}
+	return err
+}
+
+func syncWorkerModels(session *GatewaySession, modelsSync *ModelsSyncMessage) error {
+	models := normalizeModels(modelsSync.Models)
+	if len(models) == 0 {
+		return errors.New("at least one model is required")
+	}
+	group := normalizeGroup(modelsSync.Group, session.Group)
+	backendType := normalizeBackendType(modelsSync.BackendType, session.BackendType)
+
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		channel := &model.Channel{}
+		if err := tx.First(channel, "id = ?", session.ChannelID).Error; err != nil {
+			return err
+		}
+		node := &model.TokilakeWorkerNode{}
+		if err := tx.First(node, "id = ?", session.WorkerID).Error; err != nil {
+			return err
+		}
+		node.SetModels(models)
+		if modelsSync.HardwareInfo != nil {
+			node.SetHardwareInfo(modelsSync.HardwareInfo)
+		}
+		now := time.Now().Unix()
+		if err := tx.Model(node).Updates(map[string]any{
+			"models":         node.Models,
+			"hardware_info":  node.HardwareInfo,
+			"last_heartbeat": now,
+			"updated_at":     now,
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := ensureUserGroups(tx, group); err != nil {
+			return err
+		}
+
+		channel.Models = strings.Join(models, ",")
+		channel.Group = group
+		channel.Status = channelStatusFromWorkerStatus(session.Status)
+		if err := tx.Model(channel).Updates(map[string]any{
+			"models":   channel.Models,
+			"group":    channel.Group,
+			"status":   channel.Status,
+			"base_url": tokiameChannelBaseURL(session.Namespace),
+			"type":     config.ChannelTypeTokiame,
+		}).Error; err != nil {
+			return err
+		}
+
+		session.Models = models
+		session.Group = group
+		session.BackendType = backendType
+		return nil
+	})
+	if err == nil {
+		model.ChannelGroup.Load()
+		model.GlobalUserGroupRatio.Load()
+	}
+	return err
+}
+
+func upsertWorkerAndChannel(session *GatewaySession, register *RegisterMessage) (*RegisterResult, error) {
+	models := normalizeModels(register.Models)
+	if len(models) == 0 {
+		return nil, errors.New("at least one model is required")
+	}
+
+	group := normalizeGroup(register.Group, fallbackRegisterGroup(session))
+	nodeName := normalizeNodeName(register.Namespace, register.NodeName)
+	backendType := normalizeBackendType(register.BackendType, "")
+	status := model.TokilakeWorkerNodeStatusOnline
+
+	result := &RegisterResult{
+		Namespace:   strings.TrimSpace(register.Namespace),
+		Group:       group,
+		Models:      models,
+		BackendType: backendType,
+		Status:      status,
+	}
+
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().Unix()
+
+		node := &model.TokilakeWorkerNode{}
+		err := tx.Where("namespace = ?", result.Namespace).First(node).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			node = &model.TokilakeWorkerNode{}
+		}
+
+		channel, err := loadOrCreateTokiameChannel(tx, node.ChannelId)
+		if err != nil {
+			return err
+		}
+
+		if err := ensureUserGroups(tx, group); err != nil {
+			return err
+		}
+
+		channelName := tokiameChannelName(result.Namespace, nodeName)
+		baseURL := tokiameChannelBaseURL(result.Namespace)
+		if channel.Id == 0 {
+			channel.Type = config.ChannelTypeTokiame
+			channel.Key = ""
+			channel.CreatedTime = now
+			channel.Weight = &config.DefaultChannelWeight
+		}
+		channel.Type = config.ChannelTypeTokiame
+		channel.Name = channelName
+		channel.BaseURL = &baseURL
+		channel.Models = strings.Join(models, ",")
+		channel.Group = group
+		channel.Status = channelStatusFromWorkerStatus(status)
+		if channel.Id == 0 {
+			if err = tx.Create(channel).Error; err != nil {
+				return err
+			}
+		} else {
+			if err = tx.Model(channel).Updates(map[string]any{
+				"type":     channel.Type,
+				"name":     channel.Name,
+				"base_url": channel.BaseURL,
+				"models":   channel.Models,
+				"group":    channel.Group,
+				"status":   channel.Status,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		node.ProviderId = session.Token.UserId
+		node.Namespace = result.Namespace
+		node.NodeName = nodeName
+		node.Status = status
+		node.ChannelId = channel.Id
+		node.LastHeartbeat = now
+		node.UpdatedAt = now
+		if node.Id == 0 {
+			node.CreatedAt = now
+		}
+		node.SetModels(models)
+		if register.HardwareInfo != nil {
+			node.SetHardwareInfo(register.HardwareInfo)
+		}
+
+		if node.Id == 0 {
+			if err = tx.Create(node).Error; err != nil {
+				return err
+			}
+		} else {
+			if err = tx.Model(node).Updates(map[string]any{
+				"provider_id":    node.ProviderId,
+				"node_name":      node.NodeName,
+				"status":         node.Status,
+				"models":         node.Models,
+				"hardware_info":  node.HardwareInfo,
+				"last_heartbeat": node.LastHeartbeat,
+				"channel_id":     node.ChannelId,
+				"updated_at":     node.UpdatedAt,
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		result.WorkerID = node.Id
+		result.ChannelID = channel.Id
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func cleanupGatewaySession(session *GatewaySession) error {
+	var err error
+	if session.WorkerID != 0 && session.ChannelID != 0 {
+		err = model.DB.Transaction(func(tx *gorm.DB) error {
+			node := &model.TokilakeWorkerNode{}
+			if txErr := tx.First(node, "id = ?", session.WorkerID).Error; txErr != nil {
+				if errors.Is(txErr, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return txErr
+			}
+			channel := &model.Channel{}
+			if txErr := tx.First(channel, "id = ?", session.ChannelID).Error; txErr != nil {
+				if errors.Is(txErr, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return txErr
+			}
+
+			now := time.Now().Unix()
+			node.Status = model.TokilakeWorkerNodeStatusOffline
+			node.LastHeartbeat = now
+			node.UpdatedAt = now
+			if txErr := tx.Model(node).Updates(map[string]any{
+				"status":         node.Status,
+				"last_heartbeat": node.LastHeartbeat,
+				"updated_at":     node.UpdatedAt,
+			}).Error; txErr != nil {
+				return txErr
+			}
+
+			channel.Status = config.ChannelStatusAutoDisabled
+			if txErr := tx.Model(channel).Update("status", channel.Status).Error; txErr != nil {
+				return txErr
+			}
+			return nil
+		})
+		if err == nil {
+			model.ChannelGroup.Load()
+		}
+	}
+
+	manager := GetSessionManager()
+	manager.Release(session)
+
+	closeErr := session.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+func loadOrCreateTokiameChannel(tx *gorm.DB, channelID int) (*model.Channel, error) {
+	channel := &model.Channel{}
+	if channelID == 0 {
+		return channel, nil
+	}
+	if err := tx.First(channel, "id = ?", channelID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &model.Channel{}, nil
+		}
+		return nil, err
+	}
+	return channel, nil
+}
+
+func ensureUserGroups(tx *gorm.DB, groups string) error {
+	for _, group := range strings.Split(strings.TrimSpace(groups), ",") {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		existing := &model.UserGroup{}
+		err := tx.Where("symbol = ?", group).First(existing).Error
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		enable := true
+		userGroup := &model.UserGroup{
+			Symbol: group,
+			Name:   group,
+			Ratio:  1,
+			Public: false,
+			Enable: &enable,
+		}
+		if err = tx.Create(userGroup).Error; err != nil {
+			if retryErr := tx.Where("symbol = ?", group).First(existing).Error; retryErr == nil {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func writeControlError(codec *controlCodec, requestID string, code string, message string) error {
+	return codec.WriteMessage(&ControlMessage{
+		Type:      ControlMessageTypeError,
+		RequestID: requestID,
+		Error: &ErrorMessage{
+			Code:    code,
+			Message: message,
+		},
+	})
+}
+
+func normalizeModels(models []string) []string {
+	seen := make(map[string]struct{}, len(models))
+	normalized := make([]string, 0, len(models))
+	for _, modelName := range models {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		normalized = append(normalized, modelName)
+	}
+	slices.Sort(normalized)
+	return normalized
+}
+
+func normalizeGroup(group string, fallback string) string {
+	source := group
+	if strings.TrimSpace(source) == "" {
+		source = fallback
+	}
+	if strings.TrimSpace(source) == "" {
+		source = "default"
+	}
+	parts := strings.Split(source, ",")
+	seen := make(map[string]struct{}, len(parts))
+	groups := make([]string, 0, len(parts))
+	for _, item := range parts {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		groups = append(groups, item)
+	}
+	if len(groups) == 0 {
+		groups = []string{"default"}
+	}
+	slices.Sort(groups)
+	return strings.Join(groups, ",")
+}
+
+func fallbackRegisterGroup(session *GatewaySession) string {
+	if session == nil || session.Token == nil {
+		return ""
+	}
+	if strings.TrimSpace(session.Token.Group) != "" {
+		return session.Token.Group
+	}
+	userGroup, err := model.CacheGetUserGroup(session.Token.UserId)
+	if err != nil {
+		return ""
+	}
+	return userGroup
+}
+
+func normalizeNodeName(namespace string, nodeName string) string {
+	nodeName = strings.TrimSpace(nodeName)
+	if nodeName != "" {
+		return nodeName
+	}
+	return strings.TrimSpace(namespace)
+}
+
+func normalizeBackendType(backendType string, fallback string) string {
+	backendType = strings.TrimSpace(backendType)
+	if backendType != "" {
+		return backendType
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func normalizeWorkerStatus(status int) int {
+	switch status {
+	case model.TokilakeWorkerNodeStatusBusy:
+		return model.TokilakeWorkerNodeStatusBusy
+	case model.TokilakeWorkerNodeStatusOffline:
+		return model.TokilakeWorkerNodeStatusOffline
+	default:
+		return model.TokilakeWorkerNodeStatusOnline
+	}
+}
+
+func channelStatusFromWorkerStatus(status int) int {
+	if status == model.TokilakeWorkerNodeStatusOffline {
+		return config.ChannelStatusAutoDisabled
+	}
+	return config.ChannelStatusEnabled
+}
+
+func tokiameChannelName(namespace string, nodeName string) string {
+	nodeName = strings.TrimSpace(nodeName)
+	if nodeName == "" || nodeName == strings.TrimSpace(namespace) {
+		return fmt.Sprintf("%s/%s", tokiameNamePrefix, strings.TrimSpace(namespace))
+	}
+	return fmt.Sprintf("%s/%s (%s)", tokiameNamePrefix, strings.TrimSpace(namespace), nodeName)
+}
+
+func tokiameChannelBaseURL(namespace string) string {
+	return fmt.Sprintf("tokiame://%s", strings.TrimSpace(namespace))
+}
+
+type ioReadWriteDeadlineCloser interface {
+	Read(p []byte) (n int, err error)
+	Write(p []byte) (n int, err error)
+	Close() error
+	SetReadDeadline(t time.Time) error
+}

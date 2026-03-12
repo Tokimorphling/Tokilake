@@ -104,7 +104,7 @@ func (w *WeChatPay) HandleCallback(c *gin.Context, gatewayConfig string) (*types
 	}
 	if *transaction.TradeState != "SUCCESS" {
 		c.Status(http.StatusNoContent)
-		return nil, fmt.Errorf("tradeNo: %s, TransactionId: %s,  err: %v", transaction.OutTradeNo, transaction.TransactionId, err)
+		return nil, fmt.Errorf("tradeNo: %s, TransactionId: %s,  err: %v", *transaction.OutTradeNo, *transaction.TransactionId, err)
 	}
 
 	payNotify := &types.PayNotify{

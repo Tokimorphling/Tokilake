@@ -24,6 +24,7 @@ const Task = Loadable(lazy(() => import('views/Task')));
 const UserGroup = Loadable(lazy(() => import('views/UserGroup')));
 const ModelOwnedby = Loadable(lazy(() => import('views/ModelOwnedby')));
 const ModelInfo = Loadable(lazy(() => import('views/ModelInfo')));
+const PrivateGroups = Loadable(lazy(() => import('views/PrivateGroups')));
 const Invoice = Loadable(lazy(() => import('views/Invoice')));
 const InvoiceDetail = Loadable(lazy(() => import('views/Invoice/detail')));
 const MultiUserStats = Loadable(lazy(() => import('views/MultiUserStats')));
@@ -77,6 +78,10 @@ const MainRoutes = {
     {
       path: 'token',
       element: <Token />
+    },
+    {
+      path: 'private-groups',
+      element: <PrivateGroups />
     },
     {
       path: 'topup',

@@ -71,12 +71,12 @@ func (a *Alipay) HandleCallback(c *gin.Context, gatewayConfig string) (*types.Pa
 		params[k] = v
 	}
 	// 验证通知签名
-	if err := client.VerifySign(params); err != nil {
+	if err := client.VerifySign(c.Request.Context(), params); err != nil {
 		c.Writer.Write([]byte("failure"))
 		return nil, fmt.Errorf("Alipay Signature verification failed: %v", err)
 	}
 	//解析通知内容
-	var noti, err = client.DecodeNotification(params)
+	var noti, err = client.DecodeNotification(c.Request.Context(), params)
 	if err != nil {
 		c.Writer.Write([]byte("failure"))
 		return nil, fmt.Errorf("Alipay Error decoding notification: %v", err)

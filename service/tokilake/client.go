@@ -1,0 +1,686 @@
+package tokilake
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"one-api/common"
+	applog "one-api/pkg/log"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
+	"github.com/xtaci/smux"
+)
+
+const (
+	defaultHeartbeatInterval = 15 * time.Second
+	defaultReconnectDelay    = 5 * time.Second
+	controlAckTimeout        = 15 * time.Second
+	defaultAPIKeyHeader      = "Authorization"
+	defaultAPIKeyPrefix      = "Bearer "
+)
+
+type ModelTargetConfig struct {
+	URL          string            `json:"url"`
+	MappedName   string            `json:"mapped_name,omitempty"`
+	BackendType  string            `json:"backend_type,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	APIKeys      []string          `json:"api_keys,omitempty"`
+	APIKeyHeader string            `json:"api_key_header,omitempty"`
+	APIKeyPrefix string            `json:"api_key_prefix,omitempty"`
+}
+
+type ResolvedTarget struct {
+	ModelName     string
+	UpstreamModel string
+	URL           string
+	BackendType   string
+	Headers       map[string]string
+}
+
+type ClientConfig struct {
+	GatewayURL               string                       `json:"gateway_url"`
+	Token                    string                       `json:"token"`
+	Namespace                string                       `json:"namespace"`
+	NodeName                 string                       `json:"node_name,omitempty"`
+	Group                    string                       `json:"group,omitempty"`
+	BackendType              string                       `json:"backend_type,omitempty"`
+	ModelTargets             map[string]ModelTargetConfig `json:"model_targets,omitempty"`
+	HeartbeatIntervalSeconds int                          `json:"heartbeat_interval_seconds,omitempty"`
+	ReconnectDelaySeconds    int                          `json:"reconnect_delay_seconds,omitempty"`
+}
+
+type Client struct {
+	config *ClientConfig
+	dialer *websocket.Dialer
+	logger applog.Logger
+
+	requestMu      sync.Mutex
+	requestCancels map[string]context.CancelFunc
+	targetMu       sync.Mutex
+	targetKeyNext  map[string]int
+}
+
+func LoadClientConfigFromEnv() (*ClientConfig, error) {
+	config := &ClientConfig{}
+
+	if configPath := strings.TrimSpace(os.Getenv("TOKIAME_CONFIG")); configPath != "" {
+		file, err := os.Open(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("open TOKIAME_CONFIG: %w", err)
+		}
+		defer file.Close()
+		if err = common.DecodeJson(file, config); err != nil {
+			return nil, fmt.Errorf("decode TOKIAME_CONFIG: %w", err)
+		}
+	}
+
+	overrideStringEnv(&config.GatewayURL, "TOKIAME_GATEWAY_URL")
+	overrideStringEnv(&config.Token, "TOKIAME_TOKEN")
+	overrideStringEnv(&config.Namespace, "TOKIAME_NAMESPACE")
+	overrideStringEnv(&config.NodeName, "TOKIAME_NODE_NAME")
+	overrideStringEnv(&config.Group, "TOKIAME_GROUP")
+	overrideStringEnv(&config.BackendType, "TOKIAME_BACKEND_TYPE")
+
+	if interval, ok := parsePositiveEnvInt("TOKIAME_HEARTBEAT_INTERVAL_SECONDS"); ok {
+		config.HeartbeatIntervalSeconds = interval
+	}
+	if reconnect, ok := parsePositiveEnvInt("TOKIAME_RECONNECT_DELAY_SECONDS"); ok {
+		config.ReconnectDelaySeconds = reconnect
+	}
+
+	modelTargetsRaw := strings.TrimSpace(os.Getenv("TOKIAME_MODEL_TARGETS"))
+	if modelTargetsRaw != "" {
+		modelTargets := make(map[string]ModelTargetConfig)
+		if err := common.UnmarshalJsonStr(modelTargetsRaw, &modelTargets); err != nil {
+			return nil, fmt.Errorf("decode TOKIAME_MODEL_TARGETS: %w", err)
+		}
+		config.ModelTargets = modelTargets
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+func (c *ClientConfig) Validate() error {
+	if strings.TrimSpace(c.GatewayURL) == "" {
+		return errors.New("TOKIAME_GATEWAY_URL is required")
+	}
+	if strings.TrimSpace(c.Token) == "" {
+		return errors.New("TOKIAME_TOKEN is required")
+	}
+	if strings.TrimSpace(c.Namespace) == "" {
+		return errors.New("TOKIAME_NAMESPACE is required")
+	}
+
+	c.ModelTargets = normalizeModelTargets(c.ModelTargets)
+	if len(c.ModelTargets) == 0 {
+		return errors.New("TOKIAME_MODEL_TARGETS must contain at least one model mapping")
+	}
+
+	if c.HeartbeatIntervalSeconds <= 0 {
+		c.HeartbeatIntervalSeconds = int(defaultHeartbeatInterval / time.Second)
+	}
+	if c.ReconnectDelaySeconds <= 0 {
+		c.ReconnectDelaySeconds = int(defaultReconnectDelay / time.Second)
+	}
+	c.NodeName = strings.TrimSpace(c.NodeName)
+	c.Group = strings.TrimSpace(c.Group)
+	c.BackendType = strings.TrimSpace(c.BackendType)
+	c.Namespace = strings.TrimSpace(c.Namespace)
+	c.GatewayURL = strings.TrimSpace(c.GatewayURL)
+	c.Token = strings.TrimSpace(c.Token)
+	return nil
+}
+
+func (c *ClientConfig) ModelNames() []string {
+	models := make([]string, 0, len(c.ModelTargets))
+	for modelName := range c.ModelTargets {
+		models = append(models, modelName)
+	}
+	slices.Sort(models)
+	return models
+}
+
+func (c *ClientConfig) HeartbeatInterval() time.Duration {
+	return time.Duration(c.HeartbeatIntervalSeconds) * time.Second
+}
+
+func (c *ClientConfig) ReconnectDelay() time.Duration {
+	return time.Duration(c.ReconnectDelaySeconds) * time.Second
+}
+
+func (c *ClientConfig) ControlPlaneBackendType() string {
+	backendTypes := make(map[string]struct{})
+	for _, target := range c.ModelTargets {
+		backendType := effectiveBackendType(target.BackendType, c.BackendType)
+		if backendType == "" {
+			continue
+		}
+		backendTypes[backendType] = struct{}{}
+	}
+	switch len(backendTypes) {
+	case 0:
+		return normalizeClientBackendType(c.BackendType)
+	case 1:
+		for backendType := range backendTypes {
+			return backendType
+		}
+	}
+	return "mixed"
+}
+
+func NewClient(config *ClientConfig) *Client {
+	return &Client{
+		config: config,
+		dialer: &websocket.Dialer{
+			Subprotocols: []string{"tokilake.v1"},
+		},
+		logger: applog.New(
+			"component", "tokiame",
+			"namespace", config.Namespace,
+			"node_name", firstNonEmptyString(config.NodeName, config.Namespace),
+		),
+		requestCancels: make(map[string]context.CancelFunc),
+		targetKeyNext:  make(map[string]int),
+	}
+}
+
+func (c *Client) Run(ctx context.Context) error {
+	c.info("client run loop started gateway_url=%s models=%v group=%s heartbeat_interval=%s reconnect_delay=%s backend_type=%s",
+		c.config.GatewayURL,
+		c.config.ModelNames(),
+		c.config.Group,
+		c.config.HeartbeatInterval(),
+		c.config.ReconnectDelay(),
+		c.config.ControlPlaneBackendType(),
+	)
+	for {
+		err := c.runOnce(ctx)
+		if ctx.Err() != nil {
+			c.info("client run loop stopped reason=%v", ctx.Err())
+			return nil
+		}
+		if err != nil {
+			c.warn("connection closed, retrying retry_delay=%s err=%v", c.config.ReconnectDelay(), err)
+		}
+		select {
+		case <-time.After(c.config.ReconnectDelay()):
+		case <-ctx.Done():
+			c.info("client run loop stopped reason=%v", ctx.Err())
+			return nil
+		}
+	}
+}
+
+func (c *Client) runOnce(ctx context.Context) error {
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer "+c.config.Token)
+	c.info("dialing gateway gateway_url=%s", c.config.GatewayURL)
+
+	wsConn, response, err := c.dialer.DialContext(ctx, c.config.GatewayURL, headers)
+	if err != nil {
+		if response != nil {
+			return fmt.Errorf("dial gateway failed: %w (status=%s)", err, response.Status)
+		}
+		return fmt.Errorf("dial gateway failed: %w", err)
+	}
+	defer wsConn.Close()
+
+	smuxConfig := smux.DefaultConfig()
+	smuxConfig.KeepAliveDisabled = true
+	smuxSession, err := smux.Client(newWebsocketStreamConn(wsConn), smuxConfig)
+	if err != nil {
+		return fmt.Errorf("create smux client: %w", err)
+	}
+	defer smuxSession.Close()
+
+	controlStream, err := smuxSession.OpenStream()
+	if err != nil {
+		return fmt.Errorf("open control stream: %w", err)
+	}
+	defer controlStream.Close()
+
+	codec := newControlCodec(controlStream)
+	if err = c.register(codec, controlStream); err != nil {
+		return err
+	}
+	if err = c.syncModels(codec, controlStream); err != nil {
+		return err
+	}
+
+	c.info("worker connected group=%s models=%v backend_type=%s",
+		c.config.Group,
+		c.config.ModelNames(),
+		c.config.ControlPlaneBackendType(),
+	)
+
+	errCh := make(chan error, 2)
+	go c.acceptDataStreams(ctx, smuxSession, errCh)
+	go c.readControlLoop(ctx, codec, errCh)
+	go c.heartbeatLoop(ctx, codec, errCh)
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case err = <-errCh:
+		return err
+	}
+}
+
+func (c *Client) register(codec *controlCodec, controlStream readDeadlineSetter) error {
+	requestID := c.nextRequestID("register")
+	if err := codec.WriteMessage(&ControlMessage{
+		Type:      ControlMessageTypeRegister,
+		RequestID: requestID,
+		Register: &RegisterMessage{
+			Namespace:    c.config.Namespace,
+			NodeName:     c.config.NodeName,
+			Group:        c.config.Group,
+			Models:       c.config.ModelNames(),
+			HardwareInfo: collectHardwareInfo(c.config),
+			BackendType:  c.config.ControlPlaneBackendType(),
+		},
+	}); err != nil {
+		return fmt.Errorf("send register: %w", err)
+	}
+	return c.awaitAck(codec, controlStream, requestID, "register")
+}
+
+func (c *Client) syncModels(codec *controlCodec, controlStream readDeadlineSetter) error {
+	requestID := c.nextRequestID("models")
+	if err := codec.WriteMessage(&ControlMessage{
+		Type:      ControlMessageTypeModelsSync,
+		RequestID: requestID,
+		ModelsSync: &ModelsSyncMessage{
+			Group:        c.config.Group,
+			Models:       c.config.ModelNames(),
+			HardwareInfo: collectHardwareInfo(c.config),
+			BackendType:  c.config.ControlPlaneBackendType(),
+		},
+	}); err != nil {
+		return fmt.Errorf("send models_sync: %w", err)
+	}
+	return c.awaitAck(codec, controlStream, requestID, "models_sync")
+}
+
+func (c *Client) awaitAck(codec *controlCodec, controlStream readDeadlineSetter, requestID string, action string) error {
+	_ = controlStream.SetReadDeadline(time.Now().Add(controlAckTimeout))
+	defer controlStream.SetReadDeadline(time.Time{})
+
+	for {
+		msg, err := codec.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("read %s ack: %w", action, err)
+		}
+		switch msg.Type {
+		case ControlMessageTypeAck:
+			if msg.RequestID != requestID {
+				continue
+			}
+			return nil
+		case ControlMessageTypeError:
+			if msg.RequestID != requestID {
+				continue
+			}
+			if msg.Error != nil {
+				return fmt.Errorf("%s rejected: %s", action, msg.Error.Message)
+			}
+			return fmt.Errorf("%s rejected", action)
+		}
+	}
+}
+
+func (c *Client) readControlLoop(ctx context.Context, codec *controlCodec, errCh chan<- error) {
+	for {
+		msg, err := codec.ReadMessage()
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			select {
+			case errCh <- err:
+			default:
+			}
+			return
+		}
+
+		switch msg.Type {
+		case ControlMessageTypeAck:
+			continue
+		case ControlMessageTypeError:
+			if msg.Error == nil {
+				continue
+			}
+			select {
+			case errCh <- fmt.Errorf("gateway error: code=%s message=%s", msg.Error.Code, msg.Error.Message):
+			default:
+			}
+			return
+		case ControlMessageTypeCancelRequest:
+			if msg.CancelRequest == nil {
+				continue
+			}
+			cancelled := c.cancelLocalRequest(msg.CancelRequest.TargetRequestID)
+			ackMessage := "cancel_noop"
+			if cancelled {
+				ackMessage = "cancel_ok"
+			}
+			_ = codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeAck,
+				RequestID: msg.RequestID,
+				Ack: &AckMessage{
+					Message:   ackMessage,
+					Namespace: c.config.Namespace,
+				},
+			})
+		default:
+			c.debug("ignoring unsupported control message type=%s request_id=%s", msg.Type, msg.RequestID)
+		}
+	}
+}
+
+func (c *Client) heartbeatLoop(ctx context.Context, codec *controlCodec, errCh chan<- error) {
+	ticker := time.NewTicker(c.config.HeartbeatInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			err := codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeHeartbeat,
+				RequestID: c.nextRequestID("heartbeat"),
+				Heartbeat: &HeartbeatMessage{
+					NodeName:      c.config.NodeName,
+					HardwareInfo:  collectHardwareInfo(c.config),
+					CurrentModels: c.config.ModelNames(),
+				},
+			})
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("send heartbeat: %w", err):
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+func (c *Client) nextRequestID(prefix string) string {
+	return fmt.Sprintf("%s:%s:%s", c.config.Namespace, prefix, uuid.NewString())
+}
+
+func (c *Client) resolveModelTarget(modelName string) (*ResolvedTarget, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return nil, errors.New("model is required")
+	}
+	target, ok := c.config.ModelTargets[modelName]
+	if !ok {
+		return nil, fmt.Errorf("no local target configured for model %s", modelName)
+	}
+	return c.buildResolvedTarget(modelName, target), nil
+}
+
+func (c *Client) buildResolvedTarget(modelName string, target ModelTargetConfig) *ResolvedTarget {
+	headers := cloneStringMap(target.Headers)
+	if apiKey := c.selectTargetAPIKey(modelName, target.APIKeys); apiKey != "" {
+		headerName := strings.TrimSpace(target.APIKeyHeader)
+		if headerName == "" {
+			headerName = defaultAPIKeyHeader
+		}
+		headerValue := apiKey
+		if strings.EqualFold(headerName, defaultAPIKeyHeader) {
+			prefix := target.APIKeyPrefix
+			if prefix == "" {
+				prefix = defaultAPIKeyPrefix
+			}
+			headerValue = prefix + apiKey
+		} else if target.APIKeyPrefix != "" {
+			headerValue = target.APIKeyPrefix + apiKey
+		}
+		headers[headerName] = headerValue
+	}
+	return &ResolvedTarget{
+		ModelName:     modelName,
+		UpstreamModel: firstNonEmptyString(target.MappedName, modelName),
+		URL:           target.URL,
+		BackendType:   effectiveBackendType(target.BackendType, c.config.BackendType),
+		Headers:       headers,
+	}
+}
+
+func (c *Client) selectTargetAPIKey(modelName string, apiKeys []string) string {
+	if len(apiKeys) == 0 {
+		return ""
+	}
+	if len(apiKeys) == 1 {
+		return apiKeys[0]
+	}
+	c.targetMu.Lock()
+	defer c.targetMu.Unlock()
+	index := c.targetKeyNext[modelName]
+	selected := apiKeys[index%len(apiKeys)]
+	c.targetKeyNext[modelName] = (index + 1) % len(apiKeys)
+	return selected
+}
+
+func (c *Client) trackLocalRequest(requestID string, cancel context.CancelFunc) {
+	if requestID == "" || cancel == nil {
+		return
+	}
+	c.requestMu.Lock()
+	defer c.requestMu.Unlock()
+	c.requestCancels[requestID] = cancel
+}
+
+func (c *Client) removeLocalRequest(requestID string) {
+	if requestID == "" {
+		return
+	}
+	c.requestMu.Lock()
+	defer c.requestMu.Unlock()
+	delete(c.requestCancels, requestID)
+}
+
+func (c *Client) cancelLocalRequest(requestID string) bool {
+	if requestID == "" {
+		return false
+	}
+	c.requestMu.Lock()
+	cancel, ok := c.requestCancels[requestID]
+	c.requestMu.Unlock()
+	if !ok || cancel == nil {
+		return false
+	}
+	cancel()
+	return true
+}
+
+func collectHardwareInfo(config *ClientConfig) map[string]any {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = ""
+	}
+	return map[string]any{
+		"hostname":              hostname,
+		"goos":                  runtime.GOOS,
+		"goarch":                runtime.GOARCH,
+		"num_cpu":               runtime.NumCPU(),
+		"default_backend_type":  normalizeClientBackendType(config.BackendType),
+		"control_plane_backend": config.ControlPlaneBackendType(),
+		"model_target_summaries": sanitizeModelTargets(
+			config.ModelTargets,
+			config.BackendType,
+		),
+	}
+}
+
+func sanitizeModelTargets(modelTargets map[string]ModelTargetConfig, defaultBackendType string) map[string]any {
+	if len(modelTargets) == 0 {
+		return nil
+	}
+	summary := make(map[string]any, len(modelTargets))
+	for modelName, target := range modelTargets {
+		summary[modelName] = map[string]any{
+			"url":          sanitizeTargetURL(target.URL),
+			"mapped_name":  target.MappedName,
+			"backend_type": effectiveBackendType(target.BackendType, defaultBackendType),
+			"has_api_keys": len(target.APIKeys) > 0,
+			"header_count": len(target.Headers),
+		}
+	}
+	return summary
+}
+
+func sanitizeTargetURL(raw string) string {
+	return strings.TrimSpace(raw)
+}
+
+func normalizeModelTargets(modelTargets map[string]ModelTargetConfig) map[string]ModelTargetConfig {
+	normalized := make(map[string]ModelTargetConfig, len(modelTargets))
+	for modelName, target := range modelTargets {
+		modelName = strings.TrimSpace(modelName)
+		target = normalizeModelTargetConfig(target)
+		if modelName == "" || target.URL == "" {
+			continue
+		}
+		normalized[modelName] = target
+	}
+	return normalized
+}
+
+func normalizeModelTargetConfig(target ModelTargetConfig) ModelTargetConfig {
+	target.URL = strings.TrimSpace(target.URL)
+	target.MappedName = strings.TrimSpace(target.MappedName)
+	target.BackendType = strings.TrimSpace(target.BackendType)
+	target.APIKeyHeader = strings.TrimSpace(target.APIKeyHeader)
+	target.Headers = normalizeHeaderMap(target.Headers)
+	target.APIKeys = normalizeAPIKeys(target.APIKeys)
+	return target
+}
+
+func normalizeHeaderMap(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(headers))
+	for key, value := range headers {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		normalized[key] = value
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func normalizeAPIKeys(apiKeys []string) []string {
+	if len(apiKeys) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(apiKeys))
+	for _, apiKey := range apiKeys {
+		apiKey = strings.TrimSpace(apiKey)
+		if apiKey == "" {
+			continue
+		}
+		normalized = append(normalized, apiKey)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func effectiveBackendType(targetBackendType string, defaultBackendType string) string {
+	return normalizeClientBackendType(firstNonEmptyString(targetBackendType, defaultBackendType))
+}
+
+func normalizeClientBackendType(backendType string) string {
+	backendType = strings.ToLower(strings.TrimSpace(backendType))
+	switch backendType {
+	case "", "openai", "sglang":
+		if backendType == "" {
+			return "openai"
+		}
+		return backendType
+	default:
+		return backendType
+	}
+}
+
+func overrideStringEnv(target *string, envName string) {
+	if target == nil {
+		return
+	}
+	if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
+		*target = value
+	}
+}
+
+func parsePositiveEnvInt(envName string) (int, bool) {
+	value := strings.TrimSpace(os.Getenv(envName))
+	if value == "" {
+		return 0, false
+	}
+	var parsed int
+	if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil || parsed <= 0 {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (c *Client) info(format string, args ...any) {
+	c.logger.Info(fmt.Sprintf(format, args...))
+}
+
+func (c *Client) warn(format string, args ...any) {
+	c.logger.Warn(fmt.Sprintf(format, args...))
+}
+
+func (c *Client) debug(format string, args ...any) {
+	c.logger.Debug(fmt.Sprintf(format, args...))
+}
+
+type readDeadlineSetter interface {
+	SetReadDeadline(t time.Time) error
+}

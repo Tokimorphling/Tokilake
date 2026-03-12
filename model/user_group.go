@@ -54,6 +54,12 @@ func GetUserGroupsById(id int) (*UserGroup, error) {
 	return &userGroup, err
 }
 
+func UserGroupSymbolExists(symbol string) (bool, error) {
+	var count int64
+	err := DB.Model(&UserGroup{}).Where("symbol = ?", symbol).Count(&count).Error
+	return count > 0, err
+}
+
 func GetUserGroupsAll(isPublic bool) ([]*UserGroup, error) {
 	var userGroups []*UserGroup
 
@@ -108,6 +114,7 @@ type UserGroupRatio struct {
 }
 
 var GlobalUserGroupRatio = UserGroupRatio{}
+var defaultPrivateGroupAPILimiter = limit.NewAPILimiter(600)
 
 func (cgrm *UserGroupRatio) Load() {
 	userGroups, err := GetUserGroupsAll(false)
@@ -169,6 +176,10 @@ func (cgrm *UserGroupRatio) GetAll() map[string]*UserGroup {
 func (cgrm *UserGroupRatio) GetAPIRate(symbol string) int {
 	userGroup := cgrm.GetBySymbol(symbol)
 	if userGroup == nil {
+		active, err := IsActivePrivateGroupSlug(symbol)
+		if err == nil && active {
+			return 600
+		}
 		return 0
 	}
 
@@ -188,6 +199,10 @@ func (cgrm *UserGroupRatio) GetAPILimiter(symbol string) limit.RateLimiter {
 
 	limiter, ok := cgrm.APILimiter[symbol]
 	if !ok {
+		active, err := IsActivePrivateGroupSlug(symbol)
+		if err == nil && active {
+			return defaultPrivateGroupAPILimiter
+		}
 		return nil
 	}
 
@@ -207,7 +222,7 @@ func CheckAndUpgradeUserGroup(userId int, rechargeAmount int) error {
 
 	// Calculate cumulative recharge amount
 	cumulativeAmount := user.Quota + user.UsedQuota + rechargeAmount
-	logger.SysError(fmt.Sprintf("use:%f q:%f  cumulative:%f rechargeAmount:%f", (float64)(user.UsedQuota)/config.QuotaPerUnit, (float64)(user.Quota)/config.QuotaPerUnit, cumulativeAmount, rechargeAmount))
+	logger.SysError(fmt.Sprintf("use:%f q:%f  cumulative:%f rechargeAmount:%f", (float64)(user.UsedQuota)/config.QuotaPerUnit, (float64)(user.Quota)/config.QuotaPerUnit, float64(cumulativeAmount), float64(rechargeAmount)))
 	// Get all promotion-enabled user groups
 	var promotionGroups []*UserGroup
 	err = DB.Where("promotion = ? AND enable = ?", true, true).Find(&promotionGroups).Error

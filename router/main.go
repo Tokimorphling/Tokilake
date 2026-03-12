@@ -14,6 +14,7 @@ import (
 
 func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 	SetApiRouter(router)
+	SetTokilakeRouter(router)
 	SetDashboardRouter(router)
 	SetRelayRouter(router)
 	// 初始化MCP服务器与Gin集成
