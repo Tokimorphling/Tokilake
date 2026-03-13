@@ -333,7 +333,7 @@ export default function PrivateGroups() {
 
       <Stack spacing={3}>
         <Alert severity="info">
-          先创建一个全局唯一的分组名，再把你的 Tokiame 节点 <b>TOKIAME_GROUP</b> 设置成同名值。邀请码只负责授权其他用户可见和可用。
+          先创建一个全局唯一的分组名，再把你的 Tokiame 节点 <b>TOKIAME_GROUP</b> 设置成同名值。只有拥有该私有分组或已加入该私有分组的用户才能用它注册 worker；邀请码只负责授权其他用户可见和可用。
         </Alert>
 
         <Grid container spacing={3}>

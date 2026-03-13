@@ -210,7 +210,7 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
 
         values.model_mapping = JSON.stringify(cleanedMapping, null, 2);
       } catch (error) {
-        showError('Error parsing model_mapping:' + error.message);
+        showError(t('channel_edit.errorParsingModelMapping') + error.message);
       }
     }
     let modelHeadersKey = [];
@@ -234,7 +234,7 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
 
         values.model_headers = JSON.stringify(cleanedHeader, null, 2);
       } catch (error) {
-        showError('Error parsing model_headers:' + error.message);
+        showError(t('channel_edit.errorParsingModelHeaders') + error.message);
       }
     }
 
@@ -243,7 +243,7 @@ const EditModal = ({ open, channelId, onCancel, onOk, groupOptions, isTag, model
         // Validate that the custom_parameter is valid JSON
         JSON.parse(values.custom_parameter);
       } catch (error) {
-        showError('Error parsing custom_parameter: ' + error.message);
+        showError(t('channel_edit.errorParsingCustomParameter') + error.message);
         return;
       }
     }

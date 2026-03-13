@@ -84,7 +84,7 @@ export default function Overview() {
               <DateRangePicker
                 defaultValue={dateRange}
                 onChange={handleDateRangeChange}
-                localeText={{ start: '开始时间', end: '结束时间' }}
+                localeText={{ start: t('analytics_index.startTime'), end: t('analytics_index.endTime') }}
                 fullWidth
               />
             </Grid>
@@ -98,12 +98,12 @@ export default function Overview() {
             </Grid>
 
             <Grid item xs={12} sm={6}>
-              <TextField type="number" label="用户ID" value={userId} onChange={(e) => setUserId(Number(e.target.value))} fullWidth />
+              <TextField type="number" label={t('analytics_index.userId')} value={userId} onChange={(e) => setUserId(Number(e.target.value))} fullWidth />
             </Grid>
 
             <Grid item xs={12} sm={6}>
               <Button variant="contained" style={{ height: '100%' }} onClick={handleSearch} fullWidth>
-                搜索
+                 {t('common.search')}
               </Button>
             </Grid>
           </Grid>
@@ -139,7 +139,7 @@ export default function Overview() {
         <ApexCharts
           id="latency"
           isLoading={channelLoading}
-          chartDatas={channelData?.latency || {}}
+          chartDatas={channelData?.latency || {}
           title={t('analytics_index.averageLatency')}
           unit=""
         />
@@ -161,7 +161,7 @@ export default function Overview() {
       </Grid>
 
       <Grid item xs={12} md={6}>
-        <ApexCharts isLoading={orderLoading} chartDatas={orderData} title="充值" />
+         <ApexCharts isLoading={orderLoading} chartDatas={orderData} title={t('analytics_index.topup')} />
       </Grid>
     </Grid>
   );
@@ -227,14 +227,14 @@ function getBarChartOptions(data, dateRange) {
 
   let channelData = {};
 
-  channelData.costs = generateBarChartOptions(dates, Array.from(result.costs.data.values()), '美元', 3);
-  channelData.costs.options.title.text = '总消费：$' + renderChartNumber(result.costs.total, 3);
+   channelData.costs = generateBarChartOptions(dates, Array.from(result.costs.data.values()), t('analytics_index.unit_usd'), 3);
+  channelData.costs.options.title.text = t('analytics_index.totalConsumption') + ': $' + renderChartNumber(result.costs.total, 3);
 
   channelData.tokens = generateBarChartOptions(dates, Array.from(result.tokens.data.values()), '', 0);
-  channelData.tokens.options.title.text = '总Tokens：' + renderChartNumber(result.tokens.total, 0);
+  channelData.tokens.options.title.text = t('analytics_index.totalTokens') + ': ' + renderChartNumber(result.tokens.total, 0);
 
-  channelData.requests = generateBarChartOptions(dates, Array.from(result.requests.data.values()), '次', 0);
-  channelData.requests.options.title.text = '总请求数：' + renderChartNumber(result.requests.total, 0);
+   channelData.requests = generateBarChartOptions(dates, Array.from(result.requests.data.values()), t('analytics_index.unit_times'), 0);
+  channelData.requests.options.title.text = t('analytics_index.totalRequests') + ': ' + renderChartNumber(result.requests.total, 0);
 
   // 获取每天所有渠道的平均延迟
   let latency = Array.from(result.latency.data.values());
@@ -254,14 +254,14 @@ function getBarChartOptions(data, dateRange) {
 
   // 追加latency列表后面
   latency[latency.length] = {
-    name: '平均延迟',
+    name: t('analytics_index.averageLatency'),
     data: sums.map((sum, i) => Number(counts[i] ? sum / counts[i] : 0).toFixed(3))
   };
 
   let dashArray = new Array(latency.length - 1).fill(0);
   dashArray.push(5);
 
-  channelData.latency = generateBarChartOptions(dates, latency, '秒', 3);
+   channelData.latency = generateBarChartOptions(dates, latency, t('analytics_index.unit_seconds'), 3);
   channelData.latency.type = 'line';
   channelData.latency.options.chart = {
     type: 'line',
@@ -284,12 +284,12 @@ function getRedemptionData(data, dateRange) {
   const dates = getDates(dateRange.start, dateRange.end);
   const result = [
     {
-      name: '兑换金额($)',
+       name: t('analytics_index.redemptionAmount') + '($)',
       type: 'column',
       data: new Array(dates.length).fill(0)
     },
     {
-      name: '独立用户(人)',
+       name: t('analytics_index.uniqueUsers') + '(' + t('analytics_index.unit_people') + ')',
       type: 'line',
       data: new Array(dates.length).fill(0)
     }
@@ -324,13 +324,13 @@ function getRedemptionData(data, dateRange) {
       yaxis: [
         {
           title: {
-            text: '兑换金额($)'
+             text: t('analytics_index.redemptionAmount') + '($)'
           }
         },
         {
           opposite: true,
           title: {
-            text: '独立用户(人)'
+             text: t('analytics_index.uniqueUsers') + '(' + t('analytics_index.unit_people') + ')'
           }
         }
       ],
@@ -350,11 +350,11 @@ function getUsersData(data, dateRange) {
   const dates = getDates(dateRange.start, dateRange.end);
   const result = [
     {
-      name: '直接注册',
+       name: t('analytics_index.directRegistration'),
       data: new Array(dates.length).fill(0)
     },
     {
-      name: '邀请注册',
+       name: t('analytics_index.invitationRegistration'),
       data: new Array(dates.length).fill(0)
     }
   ];
@@ -371,8 +371,8 @@ function getUsersData(data, dateRange) {
     }
   }
 
-  let chartData = generateBarChartOptions(dates, result, '人', 0);
-  chartData.options.title.text = '总注册人数：' + total;
+  let chartData = generateBarChartOptions(dates, result, t('analytics_index.unit_people'), 0);
+   chartData.options.title.text = t('analytics_index.totalRegistrations') + ': ' + total;
 
   return chartData;
 }
@@ -383,7 +383,7 @@ function getOrdersData(data, dateRange) {
   const dates = getDates(dateRange.start, dateRange.end);
   const result = [
     {
-      name: '充值',
+       name: t('analytics_index.topup'),
       data: new Array(dates.length).fill(0)
     }
   ];
@@ -400,7 +400,7 @@ function getOrdersData(data, dateRange) {
   }
 
   let chartData = generateBarChartOptions(dates, result, 'CNY', 0);
-  chartData.options.title.text = '总充值数：' + total;
+   chartData.options.title.text = t('analytics_index.totalTopups') + ': ' + total;
 
   return chartData;
 }

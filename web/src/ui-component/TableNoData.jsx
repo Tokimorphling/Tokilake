@@ -1,7 +1,11 @@
 import PropTypes from 'prop-types';
 import { Box, Typography, TableRow, TableCell } from '@mui/material';
 
-const TableNoData = ({ message = '暂无数据' }) => {
+import { useTranslation } from 'react-i18next';
+
+const TableNoData = ({ message }) => {
+  const { t } = useTranslation();
+  const displayMessage = message || t('dashboard_index.no_data_available');
   return (
     <TableRow>
       <TableCell colSpan={1000}>
@@ -14,7 +18,7 @@ const TableNoData = ({ message = '暂无数据' }) => {
           }}
         >
           <Typography variant="h3" color={'#697586'}>
-            {message}
+            {displayMessage}
           </Typography>
         </Box>
       </TableCell>

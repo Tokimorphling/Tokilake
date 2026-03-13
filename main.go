@@ -46,7 +46,7 @@ func main() {
 	}
 
 	logger.SetupLogger()
-	logger.SysLog("One Hub " + config.Version + " started")
+	logger.SysLog("Tokilake " + config.Version + " started")
 
 	// Initialize user token
 	err := common.InitUserToken()

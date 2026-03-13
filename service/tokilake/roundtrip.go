@@ -9,8 +9,28 @@ import (
 	"sync"
 	"time"
 
+	"one-api/types"
+
 	"github.com/google/uuid"
 )
+
+type tunnelStreamError struct {
+	openAIError *types.OpenAIErrorWithStatusCode
+}
+
+func (e *tunnelStreamError) Error() string {
+	if e == nil || e.openAIError == nil {
+		return "tokiame stream error"
+	}
+	return e.openAIError.Message
+}
+
+func (e *tunnelStreamError) GetOpenAIError() *types.OpenAIErrorWithStatusCode {
+	if e == nil {
+		return nil
+	}
+	return e.openAIError
+}
 
 func DoTunnelRequest(ctx context.Context, channelID int, request *TunnelRequest) (*http.Response, string, error) {
 	manager := GetSessionManager()
@@ -46,7 +66,7 @@ func doTunnelRequestWithSession(ctx context.Context, manager *SessionManager, se
 		request.RequestID = requestID
 	}
 
-	_, cancel := context.WithCancel(ctx)
+	requestCtx, cancel := context.WithCancel(ctx)
 	manager.TrackRequest(&InFlightRequest{
 		RequestID: requestID,
 		SessionID: session.ID,
@@ -64,17 +84,27 @@ func doTunnelRequestWithSession(ctx context.Context, manager *SessionManager, se
 		return nil, requestID, err
 	}
 
+	completed := make(chan struct{})
+	var cleanupOnce sync.Once
+	cleanup := func() {
+		cleanupOnce.Do(func() {
+			close(completed)
+			cancel()
+			manager.RemoveRequest(requestID)
+		})
+	}
+
+	go watchTunnelContext(requestCtx, session, stream, requestID, completed)
+
 	firstFrame, err := codec.ReadResponse()
 	if err != nil {
 		_ = stream.Close()
-		manager.RemoveRequest(requestID)
-		cancel()
+		cleanup()
 		return nil, requestID, fmt.Errorf("read tokiame response header: %w", err)
 	}
 	if firstFrame.Error != nil {
 		_ = stream.Close()
-		manager.RemoveRequest(requestID)
-		cancel()
+		cleanup()
 		return nil, requestID, fmt.Errorf("tokiame request failed: %s", firstFrame.Error.Message)
 	}
 	if firstFrame.StatusCode == 0 {
@@ -89,24 +119,12 @@ func doTunnelRequestWithSession(ctx context.Context, manager *SessionManager, se
 		Body:          pipeReader,
 		ContentLength: -1,
 	}
-
-	completed := make(chan struct{})
-	var cleanupOnce sync.Once
-	cleanup := func() {
-		cleanupOnce.Do(func() {
-			close(completed)
-			cancel()
-			manager.RemoveRequest(requestID)
-		})
-	}
-
-	go watchTunnelContext(ctx, session, requestID, completed)
 	go pumpTunnelBody(stream, codec, pipeWriter, firstFrame, cleanup)
 
 	return response, requestID, nil
 }
 
-func watchTunnelContext(ctx context.Context, session *GatewaySession, requestID string, completed chan struct{}) {
+func watchTunnelContext(ctx context.Context, session *GatewaySession, stream io.Closer, requestID string, completed chan struct{}) {
 	select {
 	case <-completed:
 		return
@@ -117,6 +135,9 @@ func watchTunnelContext(ctx context.Context, session *GatewaySession, requestID 
 		default:
 		}
 		_ = SendCancelRequest(session, requestID, "client_disconnected")
+		if stream != nil {
+			_ = stream.Close()
+		}
 	}
 }
 
@@ -142,7 +163,7 @@ func pumpTunnelBody(stream io.ReadWriteCloser, codec *TunnelStreamCodec, pipeWri
 			return
 		}
 		if frame.Error != nil {
-			_ = pipeWriter.CloseWithError(fmt.Errorf("tokiame response error: %s", frame.Error.Message))
+			_ = pipeWriter.CloseWithError(newTunnelStreamError(frame.Error))
 			return
 		}
 		if len(frame.BodyChunk) > 0 {
@@ -155,6 +176,41 @@ func pumpTunnelBody(stream io.ReadWriteCloser, codec *TunnelStreamCodec, pipeWri
 			_ = pipeWriter.Close()
 			return
 		}
+	}
+}
+
+func newTunnelStreamError(errMsg *ErrorMessage) error {
+	if errMsg == nil {
+		return &tunnelStreamError{
+			openAIError: &types.OpenAIErrorWithStatusCode{
+				OpenAIError: types.OpenAIError{
+					Message: "tokiame stream error",
+					Type:    "upstream_error",
+					Code:    "tokiame_stream_error",
+				},
+				StatusCode: http.StatusBadGateway,
+			},
+		}
+	}
+
+	code := strings.TrimSpace(errMsg.Code)
+	if code == "" {
+		code = "tokiame_stream_error"
+	}
+	message := strings.TrimSpace(errMsg.Message)
+	if message == "" {
+		message = "tokiame stream error"
+	}
+
+	return &tunnelStreamError{
+		openAIError: &types.OpenAIErrorWithStatusCode{
+			OpenAIError: types.OpenAIError{
+				Message: message,
+				Type:    "upstream_error",
+				Code:    code,
+			},
+			StatusCode: http.StatusBadGateway,
+		},
 	}
 }
 

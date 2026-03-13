@@ -12,9 +12,13 @@ import MainCard from 'ui-component/cards/MainCard';
 import { gridSpacing } from 'store/constant';
 import { Box } from '@mui/material';
 
+import { useTranslation } from 'react-i18next';
+
 // ==============================|| DASHBOARD DEFAULT - TOTAL GROWTH BAR CHART ||============================== //
 
-const BubbleChard = ({ isLoading, chartDatas, title = '统计' }) => {
+const BubbleChard = ({ isLoading, chartDatas, title }) => {
+  const { t } = useTranslation();
+  const displayTitle = title || t('dashboard_index.statistics');
   chartData.options.xaxis.categories = chartDatas.xaxis;
   chartData.series = chartDatas.data;
 
@@ -28,7 +32,7 @@ const BubbleChard = ({ isLoading, chartDatas, title = '统计' }) => {
             <Grid item xs={12}>
               <Grid container alignItems="center" justifyContent="space-between">
                 <Grid item>
-                  <Typography variant="h3">{title}</Typography>
+                  <Typography variant="h3">{displayTitle}</Typography>
                 </Grid>
               </Grid>
             </Grid>
@@ -45,7 +49,7 @@ const BubbleChard = ({ isLoading, chartDatas, title = '统计' }) => {
                   }}
                 >
                   <Typography variant="h3" color={'#697586'}>
-                    暂无数据
+                    {t('dashboard_index.no_data_available')}
                   </Typography>
                 </Box>
               )}

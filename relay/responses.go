@@ -177,7 +177,11 @@ func (r *relayResponses) chatToResponseStreamClient(stream requester.StreamReade
 						// 客户端已断开，不执行任何操作，直接跳过
 					default:
 						// 客户端正常，发送错误信息
-						converter.ProcessError(err.Error())
+						if openAIErr := openAIErrorFromStream(err); openAIErr != nil {
+							converter.ProcessOpenAIError(openAIErr)
+						} else {
+							converter.ProcessError(err.Error())
+						}
 					}
 
 					logger.LogError(r.c.Request.Context(), "Stream err:"+err.Error())

@@ -4,7 +4,7 @@
 # sudo systemctl enable one-api
 # sudo systemctl status one-api
 [Unit]
-Description=One Hub Service
+Description=Tokilake Service
 After=network.target
 
 [Service]

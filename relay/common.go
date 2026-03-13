@@ -25,6 +25,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type openAIErrorCarrier interface {
+	GetOpenAIError() *types.OpenAIErrorWithStatusCode
+}
+
 func Path2Relay(c *gin.Context, path string) RelayBaseInterface {
 	var relay RelayBaseInterface
 	if strings.HasPrefix(path, "/v1/chat/completions") {
@@ -327,18 +331,30 @@ func responseStreamClient(c *gin.Context, stream requester.StreamReaderInterface
 
 			case err := <-errChan:
 				if !errors.Is(err, io.EOF) {
-					// 处理错误情况
-					errMsg := "data: " + err.Error() + "\n\n"
+					finalErr = openAIErrorFromStream(err)
+					if finalErr == nil {
+						finalErr = common.StringErrorWrapper(err.Error(), "stream_error", 900)
+					}
+
+					writeStructured := false
+					var streamErrCarrier openAIErrorCarrier
+					if errors.As(err, &streamErrCarrier) && streamErrCarrier.GetOpenAIError() != nil {
+						writeStructured = true
+					}
+
 					select {
 					case <-c.Request.Context().Done():
 						// 客户端已断开，不执行任何操作，直接跳过
 					default:
-						// 客户端正常，发送错误信息
-						c.Writer.Write([]byte(errMsg))
-						c.Writer.Flush()
+						if writeStructured {
+							writeOpenAIStreamError(c, finalErr)
+						} else {
+							errMsg := "data: " + err.Error() + "\n\n"
+							c.Writer.Write([]byte(errMsg))
+							c.Writer.Flush()
+						}
 					}
 
-					finalErr = common.StringErrorWrapper(err.Error(), "stream_error", 900)
 					logger.LogError(c.Request.Context(), "Stream err:"+err.Error())
 				} else {
 					// 正常结束，处理endHandler
@@ -374,6 +390,31 @@ func responseStreamClient(c *gin.Context, stream requester.StreamReaderInterface
 	// 等待处理完成
 	<-done
 	return firstResponseTime, nil
+}
+
+func openAIErrorFromStream(err error) *types.OpenAIErrorWithStatusCode {
+	var carrier openAIErrorCarrier
+	if errors.As(err, &carrier) && carrier.GetOpenAIError() != nil {
+		return carrier.GetOpenAIError()
+	}
+	return nil
+}
+
+func writeOpenAIStreamError(c *gin.Context, err *types.OpenAIErrorWithStatusCode) {
+	if c == nil || err == nil {
+		return
+	}
+
+	filteredErr := FilterOpenAIErr(c, err)
+	payload, marshalErr := json.Marshal(types.OpenAIErrorResponse{
+		Error: filteredErr.OpenAIError,
+	})
+	if marshalErr != nil {
+		return
+	}
+
+	c.Writer.Write([]byte("data: " + string(payload) + "\n\n"))
+	c.Writer.Flush()
 }
 
 func responseGeneralStreamClient(c *gin.Context, stream requester.StreamReaderInterface[string], endHandler StreamEndHandler) (firstResponseTime time.Time) {

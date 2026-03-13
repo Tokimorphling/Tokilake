@@ -2,9 +2,9 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  title: "One Hub 文档",
-  description: "One Hub 文档",
-  head: [['link', { rel: 'icon', href: 'https://raw.githubusercontent.com/MartialBE/one-api/main/web/src/assets/images/logo.svg' }]],
+  title: "Tokilake 文档",
+  description: "Tokilake 文档",
+  head: [['link', { rel: 'icon', href: 'https://raw.githubusercontent.com/MartialBE/Tokilake/main/web/src/assets/images/logo.svg' }]],
   lastUpdated: true,
   markdown: {
     math: true,
@@ -16,7 +16,7 @@ export default defineConfig({
     search: {
       provider: 'local'
     },
-    logo: { light: 'https://raw.githubusercontent.com/MartialBE/one-api/main/web/src/assets/images/logo.svg', dark: 'https://github.com/MartialBE/one-api/assets/42402987/c4125d1a-5577-446d-ba15-2a71c52140c1', alt: 'One Hub Logo' },
+    logo: { light: 'https://raw.githubusercontent.com/MartialBE/Tokilake/main/web/src/assets/images/logo.svg', dark: 'https://github.com/MartialBE/Tokilake/assets/42402987/c4125d1a-5577-446d-ba15-2a71c52140c1', alt: 'Tokilake Logo' },
     // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: '首页', link: '/' },
@@ -58,14 +58,14 @@ export default defineConfig({
       {
         text: '其他',
         items: [
-          { text: '更新日志', link: 'https://github.com/MartialBE/one-api/releases' },
-          { text: '请我喝杯咖啡', link: 'https://github.com/MartialBE/one-hub/wiki/Coffee' }
+          { text: '更新日志', link: 'https://github.com/MartialBE/Tokilake/releases' },
+          { text: '请我喝杯咖啡', link: 'https://github.com/MartialBE/Tokilake/wiki/Coffee' }
         ]
       }
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/MartialBE/one-hub' }
+      { icon: 'github', link: 'https://github.com/MartialBE/Tokilake' }
     ]
   }
 })

@@ -35,6 +35,15 @@ type RegisterResult struct {
 	Status      int
 }
 
+type controlPlaneError struct {
+	code    string
+	message string
+}
+
+func (e *controlPlaneError) Error() string {
+	return e.message
+}
+
 func ExtractConnectToken(r *http.Request) (string, error) {
 	key := strings.TrimSpace(r.Header.Get("Authorization"))
 	if strings.HasPrefix(strings.ToLower(key), "bearer ") {
@@ -134,7 +143,7 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 			}
 			result, registerErr := registerWorkerSession(manager, session, msg.Register)
 			if registerErr != nil {
-				if writeErr := writeControlError(codec, msg.RequestID, "register_failed", registerErr.Error()); writeErr != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, controlPlaneErrorCode(registerErr, "register_failed"), registerErr.Error()); writeErr != nil {
 					return writeErr
 				}
 				return registerErr
@@ -196,7 +205,7 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 				return errors.New("models_sync payload is required")
 			}
 			if err = syncWorkerModels(session, msg.ModelsSync); err != nil {
-				if writeErr := writeControlError(codec, msg.RequestID, "models_sync_failed", err.Error()); writeErr != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, controlPlaneErrorCode(err, "models_sync_failed"), err.Error()); writeErr != nil {
 					return writeErr
 				}
 				return err
@@ -340,10 +349,13 @@ func syncWorkerModels(session *GatewaySession, modelsSync *ModelsSyncMessage) er
 	if len(models) == 0 {
 		return errors.New("at least one model is required")
 	}
-	group := normalizeGroup(modelsSync.Group, session.Group)
+	group, err := resolveAuthorizedGroup(session.Token.UserId, modelsSync.Group, session.Group)
+	if err != nil {
+		return err
+	}
 	backendType := normalizeBackendType(modelsSync.BackendType, session.BackendType)
 
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		channel := &model.Channel{}
 		if err := tx.First(channel, "id = ?", session.ChannelID).Error; err != nil {
 			return err
@@ -401,7 +413,10 @@ func upsertWorkerAndChannel(session *GatewaySession, register *RegisterMessage) 
 		return nil, errors.New("at least one model is required")
 	}
 
-	group := normalizeGroup(register.Group, fallbackRegisterGroup(session))
+	group, err := resolveAuthorizedGroup(session.Token.UserId, register.Group, "")
+	if err != nil {
+		return nil, err
+	}
 	nodeName := normalizeNodeName(register.Namespace, register.NodeName)
 	backendType := normalizeBackendType(register.BackendType, "")
 	status := model.TokilakeWorkerNodeStatusOnline
@@ -414,7 +429,7 @@ func upsertWorkerAndChannel(session *GatewaySession, register *RegisterMessage) 
 		Status:      status,
 	}
 
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now().Unix()
 
 		node := &model.TokilakeWorkerNode{}
@@ -424,6 +439,11 @@ func upsertWorkerAndChannel(session *GatewaySession, register *RegisterMessage) 
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			node = &model.TokilakeWorkerNode{}
+		} else if node.ProviderId != 0 && node.ProviderId != session.Token.UserId {
+			return &controlPlaneError{
+				code:    "namespace_not_owned",
+				message: fmt.Sprintf("namespace %s is already owned by another user", result.Namespace),
+			}
 		}
 
 		channel, err := loadOrCreateTokiameChannel(tx, node.ChannelId)
@@ -619,6 +639,14 @@ func writeControlError(codec *controlCodec, requestID string, code string, messa
 	})
 }
 
+func controlPlaneErrorCode(err error, fallback string) string {
+	var target *controlPlaneError
+	if errors.As(err, &target) && strings.TrimSpace(target.code) != "" {
+		return target.code
+	}
+	return fallback
+}
+
 func normalizeModels(models []string) []string {
 	seen := make(map[string]struct{}, len(models))
 	normalized := make([]string, 0, len(models))
@@ -666,18 +694,56 @@ func normalizeGroup(group string, fallback string) string {
 	return strings.Join(groups, ",")
 }
 
-func fallbackRegisterGroup(session *GatewaySession) string {
-	if session == nil || session.Token == nil {
-		return ""
+func resolveAuthorizedGroup(userID int, requested string, fallback string) (string, error) {
+	if userID <= 0 {
+		return "", errors.New("invalid user id")
 	}
-	if strings.TrimSpace(session.Token.Group) != "" {
-		return session.Token.Group
-	}
-	userGroup, err := model.CacheGetUserGroup(session.Token.UserId)
+
+	primaryGroup, err := model.CacheGetUserGroup(userID)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return userGroup
+	primaryGroup = normalizeGroup(primaryGroup, "default")
+
+	allowedGroups := map[string]struct{}{
+		primaryGroup: {},
+	}
+
+	grants, err := model.GetUserPrivateGroupGrantDetails(userID)
+	if err != nil {
+		return "", err
+	}
+	for _, grant := range grants {
+		groupSlug := strings.TrimSpace(grant.GroupSlug)
+		if groupSlug == "" {
+			continue
+		}
+		allowedGroups[groupSlug] = struct{}{}
+	}
+
+	source := strings.TrimSpace(requested)
+	if source == "" {
+		source = strings.TrimSpace(fallback)
+	}
+	if source == "" {
+		return primaryGroup, nil
+	}
+
+	group := normalizeGroup(source, primaryGroup)
+	for _, item := range strings.Split(group, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := allowedGroups[item]; ok {
+			continue
+		}
+		return "", &controlPlaneError{
+			code:    "group_not_authorized",
+			message: fmt.Sprintf("group %s is not authorized for current user", item),
+		}
+	}
+	return group, nil
 }
 
 func normalizeNodeName(namespace string, nodeName string) string {

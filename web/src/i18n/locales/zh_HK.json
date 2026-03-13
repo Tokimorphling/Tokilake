@@ -86,7 +86,25 @@
     "totalUserSpending": "用戶總消費金額",
     "totalUsers": "用戶總數",
     "unused": "未使用",
-    "used": "已使用"
+    "used": "已使用",
+    "totalConsumption": "總消費",
+    "totalTokens": "總Tokens",
+    "totalRequests": "總請求數",
+    "redemptionAmount": "兌換金額",
+    "uniqueUsers": "獨立用戶",
+    "totalRegistrations": "總註冊人數",
+    "totalTopups": "總充值數",
+    "topupStatistics": "充值統計",
+    "redemptionCode": "兌換碼",
+    "order": "訂單",
+    "userId": "用戶ID",
+    "unit_times": "次",
+    "unit_people": "人",
+    "unit_seconds": "秒",
+    "unit_usd": "美元"
+  },
+  "auth_index": {
+    "loading": "加載中..."
   },
   "auth": {
     "invalidLink": "無效的鏈接",
@@ -127,7 +145,10 @@
     "collapse": "收起",
     "expand": "展開",
     "copyModels": "複製模型",
-    "mapAdd": "新增{{name}}",
+    "errorParsingModelMapping": "解析模型映射錯誤: ",
+    "errorParsingModelHeaders": "解析模型頭部錯誤: ",
+    "errorParsingCustomParameter": "解析自定義參數錯誤: ",
+    "mapAdd": "添加 {{name}}",
     "mapAddByJson": "透過 JSON 添加{{name}}",
     "mapJsonInput": "JSON 輸入",
     "listJsonError": "JSON格式錯誤，請確保輸入的是陣列格式。",
@@ -263,18 +284,23 @@
     "again": "重試 ({{count}})",
     "back": "返回",
     "bindOk": "綁定成功！",
+    "copy": "複製",
+    "copied": "已複製",
+    "notice": "公告",
+    "valueEmpty": "值不能為空",
+    "invalidOperation": "無效操作",
+    "execute": "確定執行 {{title}} 嗎？",
+    "executeConfirm": "確定",
     "cancel": "取消",
     "close": "關閉",
     "copyUrl": "複製地址",
     "create": "創建",
     "delete": "刪除",
-    "deleteConfirm": "是否刪除 {{title}}?",
+    "deleteConfirm": "確定刪除 {{title}} 嗎？",
     "disable": "已禁用",
     "downImg": "下載圖片",
     "edit": "編輯",
     "enable": "已啟用",
-    "execute": "是否執行 {{title}}?",
-    "executeConfirm": "執行",
     "exhaust": "已耗盡",
     "expired": "已過期",
     "imgUrl": "圖片地址",
@@ -300,9 +326,13 @@
     "action": "操作",
     "actions": "操作",
     "noDataAvailable": "冇數據可用",
+    "rowsPerPage": "每頁行數:",
+    "displayedRows": "{{from}}-{{to}} 共 {{count}}",
+    "unknownError": "未知錯誤",
     "pageSize": "每頁條數",
     "search": "搜尋",
-    "total": "總數"
+    "total": "總數",
+    "loading": "加載中..."
   },
   "dashboard": "儀表板",
   "dashboard_index": {
@@ -341,7 +371,7 @@
     "tab_dashboard": "儀表板",
     "title": "儀表板"
   },
-  "description": "一站式的 OpenAI 接口\n整合各種 API 訪問方式\n一鍵部署，開箱即用",
+  "description": "去中心化大模型算力調度平台\n像 OpenRouter 一樣掌控你自己的 GPU\n整合全球算力，一鍵連接生態",
   "echo 映射": "echo 映射",
   "error": {
     "unknownError": "未知錯誤"
@@ -351,7 +381,8 @@
     "basedOn": "基於",
     "developedBy": "由",
     "license": "MIT 協議",
-    "sourceCode": "源代碼遵循"
+    "sourceCode": "源代碼遵循",
+    "poweredBy": "Powered by"
   },
   "home": {
     "loadingErr": "加載首頁內容失敗..."
@@ -1009,7 +1040,7 @@
       "customSettings": {
         "aboutLabel": "關於",
         "aboutPlaceholder": "在此輸入新的關於內容，支持 Markdown & HTML 代碼。如果輸入的是一個鏈接，則會使用該鏈接作為 iframe 的 src 屬性，這允許你設置任意網頁作為關於頁面。",
-        "copyrightWarning": "移除 One Hub 的版權標識必須首先獲得授權，項目維護需要花費大量精力，如果本項目對你有意義，請主動支持本項目。",
+        "copyrightWarning": "移除 Tokilake 的版權標識必須首先獲得授權，項目維護需要花費大量精力，如果本項目對你有意義，請主動支持本項目。",
         "footerLabel": "頁腳設置",
         "footerPlaceholder": "在此輸入新的頁腳，留空則使用默認頁腳，支持 HTML 代碼",
         "homePageContentLabel": "首頁內容",
@@ -1316,7 +1347,16 @@
   },
   "ui-component": {
     "allModels": "查看所有模型",
-    "modelName": "模型名稱"
+    "modelName": "模型名稱",
+    "top_model": "Top 10 常用模型",
+    "top_channel": "Top 10 常用渠道",
+    "users": "人",
+    "calls": "次",
+    "directRegistration": "直接註冊",
+    "invitationRegistration": "邀請註冊",
+    "active": "啟用",
+    "disabled": "禁用",
+    "testDisabled": "測速禁用"
   },
   "user": "用戶",
   "userGroup": {
@@ -1448,7 +1488,7 @@
   "网页搜索": "網頁搜尋",
   "请为渠道命名": "請為渠道命名",
   "请前往开放平台的知识库上传文档，然后使用知识库功能进行检索。": "請前往開放平台的知識庫上傳文檔，然後使用知識庫功能進行檢索。",
-  "请参考wiki中的文档获取key. https://github.com/MartialBE/one-hub/wiki/VertexAI": "請參考wiki中的文檔獲取key. https://github.com/MartialBE/one-hub/wiki/VertexAI",
+  "请参考wiki中的文档获取key. https://github.com/MartialBE/Tokilake/wiki/VertexAI": "請參考wiki中的文檔獲取key. https://github.com/MartialBE/Tokilake/wiki/VertexAI",
   "请填写AZURE_OPENAI_ENDPOINT": "請填寫AZURE_OPENAI_ENDPOINT",
   "请求模型时的知识库模板, 请查看文档填写，否则不用填写": "請求模型時的知識庫模板，請查看文件填寫，否則不用填寫",
   "请输入你 Speech Studio 的位置/区域，例如：eastasia": "請輸入你 Speech Studio 的位置/區域，例如：eastasia",

@@ -11,8 +11,11 @@ const AuthStyle = styled('div')(({ theme }) => ({
   backgroundColor: theme.palette.background.default
 }));
 
+import { useTranslation } from 'react-i18next';
+
 // eslint-disable-next-line
 const AuthWrapper = ({ children }) => {
+  const { t } = useTranslation();
   const account = useSelector((state) => state.account);
   const { isUserLoaded } = useContext(UserContext);
   const navigate = useNavigate();
@@ -24,7 +27,7 @@ const AuthWrapper = ({ children }) => {
 
   // 在用户信息加载完成前显示加载状态
   if (!isUserLoaded) {
-    return <AuthStyle>加载中...</AuthStyle>;
+    return <AuthStyle>{t('auth_index.loading')}</AuthStyle>;
   }
 
   return <AuthStyle> {children} </AuthStyle>;

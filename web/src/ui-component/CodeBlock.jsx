@@ -6,7 +6,10 @@ import { copy } from 'utils/common';
 
 import 'assets/css/dracula.css';
 
+import { useTranslation } from 'react-i18next';
+
 export default function CodeBlock({ language, code }) {
+  const { t } = useTranslation();
   const preRef = useRef(null);
   const [copied, setCopied] = useState(false);
 
@@ -37,7 +40,7 @@ export default function CodeBlock({ language, code }) {
         }}
         // disabled={!preRef.current}
       >
-        {copied ? '已复制' : '复制'}
+        {copied ? t('common.copied') : t('common.copy')}
       </button>
     </div>
   );

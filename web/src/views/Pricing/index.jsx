@@ -226,16 +226,14 @@ const Pricing = () => {
 
       {noPriceModel.length > 0 && (
         <Alert severity="warning">
-          <b>{t('pricingPage.noPriceModelWarning')}</b>：
-          {noPriceModel.map((model) => (
-            <span key={model}>{model}, </span>
-          ))}
+          <b>{t('pricingPage.noPriceModelWarning')}</b>:{' '}
+          <Box sx={{ ml: 1, display: 'inline-block' }}>{noPriceModel.join(', ')}</Box>
         </Alert>
       )}
 
       {errPrices && (
-        <Alert severity="warning">
-          <b>{t('pricingPage.errPricesWarning')}</b>：{errPrices}
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <b>{t('pricingPage.errPricesWarning')}</b>: {errPrices}
         </Alert>
       )}
 

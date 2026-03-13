@@ -129,7 +129,7 @@ export default function RedemptionTableRow({ item, manageRedemption, handleOpenM
         <DialogTitle>{t('redemptionPage.del')}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {t('redemptionPage.delTip')} {item.name}？
+            {t('redemptionPage.delTip')} {item.name}?
           </DialogContentText>
         </DialogContent>
         <DialogActions>

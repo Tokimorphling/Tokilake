@@ -30,7 +30,7 @@ lastUpdated: true
 
 ## 前置条件
 
-1. 先启动 One Hub 主服务。
+1. 先启动 Tokilake 主服务。
 2. 准备一个普通用户令牌或管理员为某个用户创建的令牌，Tokiame 将使用这个令牌连接 Tokilake。
 3. 准备本地模型服务或兼容 OpenAI 的上游地址。
 
@@ -42,7 +42,7 @@ Tokilake 网关已经集成在主服务中，正常启动主程序即可：
 go run .
 ```
 
-或使用你现有的部署方式启动 One Hub。
+或使用你现有的部署方式启动 Tokilake。
 
 ## 启动 Tokiame
 
@@ -83,9 +83,9 @@ go run ./cmd/tokiame --config ./dist/tokiame.json
 
 - `TOKIAME_GATEWAY_URL`: Tokilake websocket 地址。
 - `TOKIAME_TOKEN`: 用于连接网关的用户令牌。
-- `TOKIAME_NAMESPACE`: worker 的唯一命名空间，同一时刻不能重复。
+- `TOKIAME_NAMESPACE`: worker 的唯一命名空间，同一时刻不能重复；一旦首次注册成功，后续只允许同一用户重新接管。
 - `TOKIAME_NODE_NAME`: 可选，节点显示名。
-- `TOKIAME_GROUP`: 可选，渠道所属分组，默认跟随连接令牌的用户分组。
+- `TOKIAME_GROUP`: 可选，渠道所属分组；只能使用当前用户的主用户分组，或当前用户已拥有/已加入的私有分组。省略时默认使用当前用户的主用户分组。
 - `TOKIAME_BACKEND_TYPE`: 可选，默认 `openai`。
 - `TOKIAME_MODEL_TARGETS`: 必填，JSON 格式的模型到本地目标映射。
 - `TOKIAME_HEARTBEAT_INTERVAL_SECONDS`: 可选，心跳间隔。
@@ -128,7 +128,8 @@ go run ./cmd/tokiame --config ./dist/tokiame.json
 
 ## 分组行为
 
-- `TOKIAME_GROUP` 对应的分组如果不存在，会在数据库中自动创建。
+- `TOKIAME_GROUP` 必须是当前用户有权使用的分组；私有分组需要先创建并授予当前用户访问权限。
+- `TOKIAME_GROUP` 对应的 `user_groups` 记录如果不存在，会在授权校验通过后自动创建。
 - 自动创建的分组默认为非公开分组。
 - 如果希望其他用户也能直接在令牌中选择这个分组，需要管理员把对应 `user_group` 调整为公开分组，或把这些用户的用户分组改成同名分组。
 
@@ -156,12 +157,17 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 
 说明同一个 `TOKIAME_NAMESPACE` 已经有在线 worker。请更换命名空间，或等待旧连接断开。
 
+### 1.1 `namespace_not_owned`
+
+说明这个 `TOKIAME_NAMESPACE` 已经被其他用户首次注册并持有。请更换命名空间，或使用原用户的令牌重新连接。
+
 ### 2. worker 在线，但模型没有出现
 
 优先检查：
 
 - `TOKIAME_MODEL_TARGETS` 是否是合法 JSON。
 - `TOKIAME_GROUP` 是否和预期一致。
+- 当前连接用户是否真的拥有该分组，或已经加入对应私有分组。
 - 对应渠道是否已自动创建成功。
 - 当前用户是否有权限使用该分组。
 

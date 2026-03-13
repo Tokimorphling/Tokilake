@@ -7,7 +7,7 @@ import { useSelector } from 'react-redux';
 
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
-  if (!system_name) return 'One Hub';
+  if (!system_name) return 'Tokilake';
   return system_name;
 }
 

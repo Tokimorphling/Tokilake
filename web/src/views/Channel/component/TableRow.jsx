@@ -1015,7 +1015,7 @@ export default function ChannelTableRow({ item, manageChannel, onRefresh, groupO
                                         <TextField
                                           id={`priority-${channel.id}`}
                                           type="number"
-                                          label="优先级"
+                                          label={t('channel_index.priority')}
                                           variant="standard"
                                           value={channel.priority}
                                           onChange={(e) => handleTagChannelPriorityChange(channel.id, Number(e.target.value))}
@@ -1134,8 +1134,10 @@ export default function ChannelTableRow({ item, manageChannel, onRefresh, groupO
                             rowsPerPage={tagRowsPerPage}
                             onRowsPerPageChange={handleChangeTagRowsPerPage}
                             rowsPerPageOptions={PAGE_SIZE_OPTIONS}
-                            labelRowsPerPage="每页行数:"
-                            labelDisplayedRows={({ from, to, count }) => `${from}-${to} 共 ${count}`}
+                            labelRowsPerPage={t('common.rowsPerPage')}
+                            labelDisplayedRows={({ from, to, count }) =>
+                              t('common.displayedRows', { from, to, count: count !== -1 ? count : `more than ${to}` })
+                            }
                             sx={{
                               '.MuiTablePagination-toolbar': {
                                 minHeight: '40px',
@@ -1167,7 +1169,7 @@ export default function ChannelTableRow({ item, manageChannel, onRefresh, groupO
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={confirmDelete.onFalse}>{t('token_index.close')}</Button>
+          <Button onClick={confirmDelete.onFalse}>{t('common.cancel')}</Button>
           <Button
             onClick={() => {
               if (currentTestingChannel) {
@@ -1421,7 +1423,7 @@ export default function ChannelTableRow({ item, manageChannel, onRefresh, groupO
                   }
                 })
                 .catch((error) => {
-                  const errorMessage = error.response?.data?.message || error.message || '未知错误';
+                  const errorMessage = error.response?.data?.message || error.message || t('common.unknownError');
                   showError(t('channel_edit.editError', { message: errorMessage }));
                 })
                 .finally(() => {

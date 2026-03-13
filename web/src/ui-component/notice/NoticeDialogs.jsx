@@ -7,7 +7,10 @@ import { Icon } from '@iconify/react';
 
 import { useNotice } from './NoticeContext';
 
+import { useTranslation } from 'react-i18next';
+
 export const NoticeDialogs = () => {
+  const { t } = useTranslation();
   const { isOpen, closeNotice, notice } = useNotice();
 
   return (
@@ -22,7 +25,7 @@ export const NoticeDialogs = () => {
         }}
         id="customized-dialog-title"
       >
-        公告
+        {t('common.notice')}
       </DialogTitle>
       <IconButton
         aria-label="close"

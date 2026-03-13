@@ -101,6 +101,17 @@ func (converter *OpenAIResponsesStreamConverter) ProcessError(jsonStr string) {
 	converter.sendError(jsonStr)
 }
 
+func (converter *OpenAIResponsesStreamConverter) ProcessOpenAIError(err *types.OpenAIErrorWithStatusCode) {
+	if err == nil {
+		return
+	}
+	code := "error"
+	if errCode, ok := err.Code.(string); ok && errCode != "" {
+		code = errCode
+	}
+	converter.sendStructuredError(code, err.Message)
+}
+
 // 处理choices
 func (converter *OpenAIResponsesStreamConverter) processChoices(choices []types.ChatCompletionStreamChoice) {
 	for _, choice := range choices {
@@ -410,9 +421,16 @@ func (converter *OpenAIResponsesStreamConverter) sendStreamEvent(resp any, respo
 
 // 错误响应
 func (converter *OpenAIResponsesStreamConverter) sendError(msg string) {
+	converter.sendStructuredError("error", msg)
+}
+
+func (converter *OpenAIResponsesStreamConverter) sendStructuredError(code string, msg string) {
+	if code == "" {
+		code = "error"
+	}
 	respErr := map[string]interface{}{
 		"type":    "error",
-		"code":    "error",
+		"code":    code,
 		"message": msg,
 	}
 

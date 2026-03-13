@@ -187,7 +187,7 @@ export default function ChannelList() {
         case 'priority':
         case 'weight':
           if (value === '') {
-            return { success: false, message: '值不能为空' };
+            return { success: false, message: t('common.valueEmpty') };
           }
 
           if (!tag) {
@@ -219,8 +219,8 @@ export default function ChannelList() {
           res = await API.put(`/api/channel_tag/${id}/status/${value}`);
           break;
         default:
-          showError('无效操作');
-          return { success: false, message: '无效操作' };
+          showError(t('common.invalidOperation'));
+          return { success: false, message: t('common.invalidOperation') };
       }
       const { success, message } = res.data;
       if (success) {

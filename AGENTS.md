@@ -1,4 +1,4 @@
-# AGENTS.md — One Hub (one-api)
+# AGENTS.md — Tokilake (one-api)
 
 LLM API aggregation gateway. Go (Gin) backend + React (Vite/MUI) frontend.
 Forked from songquanpeng/one-api. Multi-provider proxy for OpenAI, Claude, Gemini, etc.

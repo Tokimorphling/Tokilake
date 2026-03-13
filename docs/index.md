@@ -3,7 +3,7 @@
 layout: home
 
 hero:
-  name: "One Hub 文档"
+  name: "Tokilake 文档"
   actions:
     - theme: brand
       text: 开始使用
@@ -15,11 +15,11 @@ hero:
 features:
   - title: 部署
     icon: 🚀
-    details: 部署One Hub
+    details: 部署 Tokilake
     link: /deployment/index
   - title: 使用方法
     icon: 📖
-    details: 使用One Hub
+    details: 使用 Tokilake
     link: /use/index
   - title: 常见问题
     icon: 💬

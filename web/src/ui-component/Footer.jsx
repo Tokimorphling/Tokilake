@@ -17,19 +17,12 @@ const Footer = () => {
           <div className="custom-footer" dangerouslySetInnerHTML={{ __html: siteInfo.footer_html }}></div>
         ) : (
           <>
-            <Link href="https://github.com/MartialBE/one-hub" target="_blank">
-              {siteInfo.system_name} {import.meta.env.VITE_APP_VERSION}{' '}
-            </Link>
-            {t('footer.developedBy')}{' '}
-            <Link href="https://github.com/MartialBE" target="_blank">
-              MartialBE
-            </Link>
-            ，{t('footer.basedOn')}{' '}
-            <Link href="https://github.com/songquanpeng" target="_blank">
-              JustSong
-            </Link>{' '}
-            One Hub，{t('footer.sourceCode')}
-            <Link href="https://opensource.org/licenses/mit-license.php"> {t('footer.license')}</Link>
+            <Box component="span" sx={{ display: 'block', fontSize: '12px', mt: 0.5, opacity: 0.6 }}>
+              {t('footer.poweredBy')}{' '}
+              <Link href="https://github.com/MartialBE/one-hub" target="_blank" color="inherit">
+                One Hub
+              </Link>
+            </Box>
           </>
         )}
       </Box>

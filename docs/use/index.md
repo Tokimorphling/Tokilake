@@ -18,27 +18,27 @@ lastUpdated: true
 
 在`渠道`页面中添加你的 API Key，之后在`令牌`页面中新增访问令牌。
 
-之后就可以使用你的令牌访问 One Hub 了。
+之后就可以使用你的令牌访问 Tokilake 了。
 
 ### OpenAI API
 
 使用方式与 [OpenAI API](https://platform.openai.com/docs/api-reference/introduction) 一致。
 
-你需要在各种用到 OpenAI API 的地方设置 API Base 为你的 One Hub 的部署地址，例如：`https://api.onehub.cn`，API Key 则为你在 One API 中生成的令牌。
+你需要在各种用到 OpenAI API 的地方设置 API Base 为你的 Tokilake 的部署地址，例如：`https://api.tokilake.cn`，API Key 则为你在 Tokilake 中生成的令牌。
 
 ::: warning 注意
 具体的 API Base 的格式取决于你所使用的客户端，请尝试如下地址：
 
-- `https://api.onehub.cn`
-- `https://api.onehub.cn/v1`
-- `https://api.onehub.cn/v1/chat/completions`
+- `https://api.tokilake.cn`
+- `https://api.tokilake.cn/v1`
+- `https://api.tokilake.cn/v1/chat/completions`
   :::
 
 #### 使用示例
 
 ```bash
 curl --request POST \
-    --url https://api.onehub.cn/v1/chat/completions \
+    --url https://api.tokilake.cn/v1/chat/completions \
     --header 'Authorization: Bearer sk-替换为你的key' \
     -H "Content-Type: application/json" \
     --data '{
@@ -56,13 +56,13 @@ curl --request POST \
 
 使用方式与 [Claude API](https://docs.anthropic.com/en/api/messages) 一致。
 
-你需要在各种用到 Claude API 的地方设置 API Base 为你的 One Hub 的部署地址，例如：`https://claude.xxxx.cn/claude`，API Key 则为你在 One API 中生成的令牌。
+你需要在各种用到 Claude API 的地方设置 API Base 为你的 Tokilake 的部署地址，例如：`https://claude.xxxx.cn/claude`，API Key 则为你在 Tokilake 中生成的令牌。
 
 #### 使用示例
 
 ```bash
 curl --request POST \
-    --url https://api.onehub.cn/claude/v1/messages \
+    --url https://api.tokilake.cn/claude/v1/messages \
     -H "Content-Type: application/json" \
     -H "x-api-key: sk-替换为你的key" \
     --data '{
@@ -79,13 +79,13 @@ curl --request POST \
 
 ### Gemini API
 
-你需要在各种用到 Gemini API 的地方设置 API Base 为你的 One Hub 的部署地址，例如：`https://api.onehub.cn/gemini`，API Key 则为你在 One API 中生成的令牌。
+你需要在各种用到 Gemini API 的地方设置 API Base 为你的 Tokilake 的部署地址，例如：`https://api.tokilake.cn/gemini`，API Key 则为你在 Tokilake 中生成的令牌。
 
 #### 使用示例
 
 ```bash
 curl --request POST \
-  --url https://api.onehub.cn/gemini/v1alpha/models/gemini-2.0-pro-exp:generateContent \
+  --url https://api.tokilake.cn/gemini/v1alpha/models/gemini-2.0-pro-exp:generateContent \
   --header 'Content-Type: application/json' \
   --header 'x-goog-api-key: sk-替换为你的key' \
   --data '{

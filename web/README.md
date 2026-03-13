@@ -1,6 +1,6 @@
-# One Hub 前端界面
+# Tokilake 前端界面
 
-这个项目是 One Hub 的前端界面，它基于 [Berry Free React Admin Template](https://github.com/codedthemes/berry-free-react-admin-template) 进行开发。
+这个项目是 Tokilake 的前端界面，它基于 [Berry Free React Admin Template](https://github.com/codedthemes/berry-free-react-admin-template) 进行开发。
 
 ## 使用的开源项目
 
