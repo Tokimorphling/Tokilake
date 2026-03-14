@@ -81,22 +81,23 @@ $(TOKIAME_TARGETS):
 
 # Advanced release packaging (for NPM/CI)
 release-archives: all-binaries
-	$(eval PKG_VERSION := $(shell grep '"version":' packaging/npm/tokiame/package.json | cut -d'"' -f4))
-	@for p in $(PLATFORMS); do \
+	@set -e; \
+	PKG_VERSION=$$(grep '"version":' packaging/npm/tokiame/package.json | cut -d'"' -f4); \
+	for p in $(PLATFORMS); do \
 		os=$$(echo $$p | cut -d'/' -f1); \
 		arch=$$(echo $$p | cut -d'/' -f2); \
 		if [ "$$os" = "windows" ]; then \
-			cd $(DISTDIR) && zip -j "tokiame_$${PKG_VERSION}_$${os}_$${arch}.zip" "tokiame-$${os}-$${arch}.exe" && cd ..; \
+			(cd $(DISTDIR) && zip -j "tokiame_$${PKG_VERSION}_$${os}_$${arch}.zip" "tokiame-$${os}-$${arch}.exe"); \
 		else \
 			cp "$(DISTDIR)/tokiame-$$os-$$arch" "$(DISTDIR)/tokiame"; \
-			cd $(DISTDIR) && tar -czf "tokiame_$${PKG_VERSION}_$${os}_$${arch}.tar.gz" "tokiame" && rm -f "tokiame" && cd ..; \
+			(cd $(DISTDIR) && tar -czf "tokiame_$${PKG_VERSION}_$${os}_$${arch}.tar.gz" "tokiame"); \
+			rm -f "$(DISTDIR)/tokiame"; \
 		fi; \
-	done
-	@# Generate checksums
-	@cd $(DISTDIR) && \
-		sha256sum tokiame_$(PKG_VERSION)_linux_*.tar.gz > SHA256SUMS-linux.txt && \
-		sha256sum tokiame_$(PKG_VERSION)_darwin_*.tar.gz > SHA256SUMS-darwin.txt && \
-		sha256sum tokiame_$(PKG_VERSION)_windows_*.zip > SHA256SUMS-windows.txt
+	done; \
+	cd $(DISTDIR); \
+	sha256sum tokiame_$${PKG_VERSION}_linux_*.tar.gz > SHA256SUMS-linux.txt; \
+	sha256sum tokiame_$${PKG_VERSION}_darwin_*.tar.gz > SHA256SUMS-darwin.txt; \
+	sha256sum tokiame_$${PKG_VERSION}_windows_*.zip > SHA256SUMS-windows.txt
 
 clean:
 	$(CLEAN_DIST)
