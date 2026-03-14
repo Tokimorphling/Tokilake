@@ -66,7 +66,7 @@ const BaseIndex = () => {
                   variant="contained"
                   size="large"
                   startIcon={<GitHub />}
-                  href="https://github.com/MartialBE/one-hub"
+                  href="https://github.com/Tokimorphling/Tokilake"
                   target="_blank"
                   sx={{
                     borderRadius: '12px',

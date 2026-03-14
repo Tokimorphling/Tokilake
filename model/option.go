@@ -148,6 +148,8 @@ func loadOptionsFromConfig() {
 		"PasswordRegisterEnabled":   "password_register_enabled",
 		"RegisterEnabled":           "register_enabled",
 		"GitHubOAuthEnabled":        "github_oauth_enabled",
+		"GitHubClientId":            "github_client_id",
+		"GitHubClientSecret":        "github_client_secret",
 		"GoogleOAuthEnabled":        "google_oauth_enabled",
 		"GoogleOnlyRegisterEnabled": "google_only_register_enabled",
 		"WeChatAuthEnabled":         "wechat_auth_enabled",
