@@ -25,6 +25,11 @@ jobs:
           yarn install
           VITE_APP_VERSION=$(git describe --tags) yarn run build
           cd ..
+      - name: Sync NPM Version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd packaging/npm/tokiame
+          npm version "$VERSION" --no-git-tag-version
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -56,6 +61,11 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+      - name: Sync NPM Version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd packaging/npm/tokiame
+          npm version "$VERSION" --no-git-tag-version
       - name: Publish to NPM
         run: |
           cd packaging/npm/tokiame
