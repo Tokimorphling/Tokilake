@@ -10,6 +10,13 @@ Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关
 
 > **Tokilake** 基于 [MartialBE/one-hub](https://github.com/MartialBE/one-hub) 以及后续的 One-API 生态分支持续演进而来。
 
+## 📖 快速开始 / Quick Start
+
+你可以通过 [Tokilake Demo](https://tokilake.abrdns.com/) 快速体验核心功能。为了确保数据的绝对安全与分发的完全自主，我们强烈建议你参考**端到端部署指南**自行托管。无论你是初次体验还是准备深度部署，下方的文档都将为你提供完整指引。
+
+- **[📚 中文使用指南](./docs/guide.zh.md)**
+- **[📖 User Guide (English)](./docs/guide.en.md)**
+
 ## 🌟 核心理念
 
 传统的 API 代理通常作为 Client，将请求路由到拥有公网 IP 地址的 Server。如果你的高算力显卡（如 RTX 4090）躺在家里的局域网内，或者散布在不同云厂商的临时竞价实例（Spot Instances）上，将其统一成稳定可用的 API 极具挑战。
