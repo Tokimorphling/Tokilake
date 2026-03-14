@@ -36,17 +36,11 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release-build release-artifacts
           go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-linux-amd64 .
-          sudo rm /etc/apt/sources.list.d/microsoft-prod.list
-          sudo apt-get update
-          sudo apt-get install gcc-aarch64-linux-gnu
-          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-linux-arm64 .
 
           ./hack/scripts/package-release.sh tokilake "$VERSION" linux amd64 release-build/tokilake-linux-amd64 release-artifacts
-          ./hack/scripts/package-release.sh tokilake "$VERSION" linux arm64 release-build/tokilake-linux-arm64 release-artifacts
           ./hack/scripts/write-sha256sums.sh \
             release-artifacts/SHA256SUMS-linux.txt \
-            release-artifacts/tokilake_"$VERSION"_linux_amd64.tar.gz \
-            release-artifacts/tokilake_"$VERSION"_linux_arm64.tar.gz
+            release-artifacts/tokilake_"$VERSION"_linux_amd64.tar.gz
 
       - name: Release
         uses: softprops/action-gh-release@v1

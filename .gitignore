@@ -32,3 +32,7 @@ release-artifacts/
 __pycache__/
 *.pyc
 *.pyo
+/deploy/runtime/
+/deploy/.env.compose
+/deploy/runtime-letsencrypt/
+/deploy/.env.compose.letsencrypt

@@ -8,7 +8,7 @@
 
 Tokilake is a decentralized Large Language Model (LLM) API scheduling gateway built on the One-API ecosystem. It completely flips the traditional API gateway model: instead of the gateway strictly acting as a client that actively requests servers with public IPs, it **allows any GPU worker node (Tokiame) located behind NAT/Intranets to actively connect to the central gateway (Hub) via a reverse WebSocket tunnel**.
 
-> This project is built on top of [songquanpeng/one-api](https://github.com/songquanpeng/one-api) and the broader One-API ecosystem that evolved around it.
+> **Tokilake** is built on top of [MartialBE/one-hub](https://github.com/MartialBE/one-hub) and the broader One-API ecosystem that evolved around it.
 
 ## 🌟 Core Concept
 

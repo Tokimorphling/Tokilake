@@ -49,13 +49,11 @@ openssl rand -hex 32
 
 如果你不想运行容器，也可以直接使用 GitHub Releases 里的预编译归档：
 
-- `tokilake_<version>_<os>_<arch>.tar.gz|zip`
+- `tokilake_<version>_linux_amd64.tar.gz`
 
 每个 release 还会额外附带：
 
 - `SHA256SUMS-linux.txt`
-- `SHA256SUMS-darwin.txt`
-- `SHA256SUMS-windows.txt`
 
 ### 准备工作
 

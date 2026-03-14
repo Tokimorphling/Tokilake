@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      POSTGRES_DB: ${POSTGRES_DB:-tokilake}
+      POSTGRES_USER: ${POSTGRES_USER:-tokilake}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - "${TOKILAKE_COMPOSE_ROOT:-./runtime}/postgres:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokilake} -d ${POSTGRES_DB:-tokilake}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - "${TOKILAKE_COMPOSE_ROOT:-./runtime}/redis:/data"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  tokilake:
+    image: ${TOKILAKE_IMAGE:-ghcr.io/tokimorphling/tokilake:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - "${TOKILAKE_COMPOSE_ROOT:-./runtime}/config/config.yaml:/data/config.yaml:ro"
+      - "${TOKILAKE_COMPOSE_ROOT:-./runtime}/data:/data"
+    expose:
+      - "19981"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      tokilake:
+        condition: service_started
+    environment:
+      TOKILAKE_SERVER_NAME: ${TOKILAKE_SERVER_NAME:-_}
+      TOKILAKE_UPSTREAM: ${TOKILAKE_UPSTREAM:-http://tokilake:19981}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - "./nginx.compose.http.conf.template:/etc/nginx/templates/default.conf.template:ro"
