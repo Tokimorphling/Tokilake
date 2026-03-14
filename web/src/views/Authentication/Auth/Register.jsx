@@ -1,8 +1,10 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 
 // material-ui
 import { useTheme } from '@mui/material/styles';
-import { Divider, Grid, Stack, Typography, useMediaQuery } from '@mui/material';
+import { Box, Button, Divider, Grid, Stack, Typography, useMediaQuery } from '@mui/material';
 
 // project imports
 import AuthWrapper from '../AuthWrapper';
@@ -11,7 +13,9 @@ import Logo from 'ui-component/Logo';
 import AuthRegister from '../AuthForms/AuthRegister';
 
 // assets
+import Google from 'assets/images/icons/social-google.svg';
 import { useTranslation } from 'react-i18next';
+import { onGoogleOAuthClicked } from 'utils/common';
 
 // ===============================|| AUTH3 - REGISTER ||=============================== //
 
@@ -19,6 +23,17 @@ const Register = () => {
   const { t } = useTranslation();
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('md'));
+  const siteInfo = useSelector((state) => state.siteInfo);
+  const [searchParams] = useSearchParams();
+  const showPasswordRegister = !siteInfo.isLoading && siteInfo.register_enabled && siteInfo.password_register;
+  const showGoogleRegister = !siteInfo.isLoading && siteInfo.google_oauth && siteInfo.google_only_register;
+
+  useEffect(() => {
+    const affCode = searchParams.get('aff');
+    if (affCode) {
+      localStorage.setItem('aff', affCode);
+    }
+  }, [searchParams]);
 
   return (
     <AuthWrapper>
@@ -45,7 +60,28 @@ const Register = () => {
                     </Grid>
                   </Grid>
                   <Grid item xs={12}>
-                    <AuthRegister />
+                    {siteInfo.isLoading ? null : showPasswordRegister ? (
+                      <AuthRegister />
+                    ) : showGoogleRegister ? (
+                      <Button
+                        fullWidth
+                        size="large"
+                        variant="outlined"
+                        onClick={() => onGoogleOAuthClicked()}
+                        sx={{
+                          ...theme.typography.LoginButton
+                        }}
+                      >
+                        <Box sx={{ mr: { xs: 1, sm: 2, width: 20 }, display: 'flex', alignItems: 'center' }}>
+                          <img src={Google} alt="Google" width={25} height={25} style={{ marginRight: matchDownSM ? 8 : 16 }} />
+                        </Box>
+                        {t('registerPage.googleOnlyRegister')}
+                      </Button>
+                    ) : (
+                      <Typography variant="body1" color="textSecondary" align="center">
+                        {t('registerPage.passwordRegisterDisabled')}
+                      </Typography>
+                    )}
                   </Grid>
                   <Grid item xs={12}>
                     <Divider />

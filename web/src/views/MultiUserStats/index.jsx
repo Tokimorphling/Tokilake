@@ -12,8 +12,10 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import MainCard from 'ui-component/cards/MainCard';
+import { useTranslation } from 'react-i18next';
 
 export default function MultiUserStats() {
+  const { t } = useTranslation();
   const theme = useTheme();
   const [usernames, setUsernames] = useState('');
   const [startDate, setStartDate] = useState(dayjs().subtract(30, 'day'));
@@ -24,7 +26,7 @@ export default function MultiUserStats() {
 
   const handleSearch = async () => {
     if (!usernames.trim()) {
-      showError('请输入用户名');
+      showError(t('multi_user_stats.messages.enter_usernames'));
       return;
     }
 
@@ -42,23 +44,23 @@ export default function MultiUserStats() {
         setStatistics(data || []);
         setModelUsage(model_usage || []);
         if (data.length === 0) {
-          showSuccess('查询成功,但没有找到数据');
+          showSuccess(t('multi_user_stats.messages.no_data'));
         } else {
-          showSuccess(`查询成功,找到 ${data.length} 个用户的数据`);
+          showSuccess(t('multi_user_stats.messages.data_found', { count: data.length }));
         }
       } else {
         showError(message);
       }
     } catch (error) {
       console.error(error);
-      showError('查询失败: ' + (error.response?.data?.message || error.message));
+      showError(t('multi_user_stats.messages.query_failed') + (error.response?.data?.message || error.message));
     }
     setSearching(false);
   };
 
   const handleExportCSV = async () => {
     if (!usernames.trim()) {
-      showError('请输入用户名');
+      showError(t('multi_user_stats.messages.enter_usernames'));
       return;
     }
 
@@ -82,10 +84,10 @@ export default function MultiUserStats() {
       link.remove();
       window.URL.revokeObjectURL(url);
 
-      showSuccess('CSV导出成功');
+      showSuccess(t('multi_user_stats.messages.export_success'));
     } catch (error) {
       console.error(error);
-      showError('导出失败: ' + (error.response?.data?.message || error.message));
+      showError(t('multi_user_stats.messages.export_failed') + (error.response?.data?.message || error.message));
     }
     setSearching(false);
   };
@@ -111,7 +113,7 @@ export default function MultiUserStats() {
         labels: { style: { colors: theme.palette.text.primary } }
       },
       yaxis: {
-        title: { text: '额度消耗', style: { color: theme.palette.text.primary } },
+        title: { text: t('multi_user_stats.charts.quota_consumption'), style: { color: theme.palette.text.primary } },
         labels: {
           style: { colors: theme.palette.text.primary },
           formatter: (val) => '$' + calculateQuota(val, 2)
@@ -140,7 +142,7 @@ export default function MultiUserStats() {
     },
     series: [
       {
-        name: '额度消耗',
+        name: t('multi_user_stats.charts.quota_consumption'),
         data: statistics.map((s) => s.quota)
       }
     ]
@@ -189,7 +191,7 @@ export default function MultiUserStats() {
               show: true,
               total: {
                 show: true,
-                label: '总调用次数',
+                label: t('multi_user_stats.charts.total_calls'),
                 color: theme.palette.text.secondary,
                 formatter: (w) => w.globals.seriesTotals.reduce((a, b) => a + b, 0).toLocaleString()
               }
@@ -199,7 +201,7 @@ export default function MultiUserStats() {
       },
       tooltip: {
         theme: theme.palette.mode,
-        y: { formatter: (val) => val.toLocaleString() + ' 次' }
+        y: { formatter: (val) => val.toLocaleString() + ' ' + t('multi_user_stats.charts.unit_times') }
       }
     },
     series: modelUsage.map((m) => m.request_count)
@@ -209,12 +211,12 @@ export default function MultiUserStats() {
     <>
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={5}>
         <Stack direction="column" spacing={1}>
-          <Typography variant="h2">多用户令牌统计</Typography>
+          <Typography variant="h2">{t('multi_user_stats.title')}</Typography>
           <Typography variant="subtitle1" color="text.secondary">
-            Multi-User Token Statistics
+            {t('multi_user_stats.description')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            查询多个用户的所有令牌使用情况统计数据
+            {t('multi_user_stats.subtitle')}
           </Typography>
         </Stack>
       </Stack>
@@ -223,24 +225,24 @@ export default function MultiUserStats() {
         <Stack spacing={3}>
           <TextField
             fullWidth
-            label="用户名 (多个用户名用逗号分隔)"
-            placeholder="例如: user1, user2, user3"
+            label={t('multi_user_stats.usernames_label')}
+            placeholder={t('multi_user_stats.usernames_placeholder')}
             value={usernames}
             onChange={(e) => setUsernames(e.target.value)}
-            helperText="输入一个或多个用户名,用逗号分隔"
+            helperText={t('multi_user_stats.usernames_helper')}
           />
 
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Stack direction="row" spacing={2}>
               <DatePicker
-                label="开始日期"
+                label={t('multi_user_stats.start_date')}
                 value={startDate}
                 onChange={(newValue) => setStartDate(newValue)}
                 format="YYYY-MM-DD"
                 slotProps={{ textField: { fullWidth: true } }}
               />
               <DatePicker
-                label="结束日期"
+                label={t('multi_user_stats.end_date')}
                 value={endDate}
                 onChange={(newValue) => setEndDate(newValue)}
                 format="YYYY-MM-DD"
@@ -256,7 +258,7 @@ export default function MultiUserStats() {
               disabled={searching}
               startIcon={<Icon icon="solar:magnifer-bold-duotone" width={20} />}
             >
-              查询统计
+              {t('multi_user_stats.query_button')}
             </Button>
             <Button
               variant="outlined"
@@ -264,7 +266,7 @@ export default function MultiUserStats() {
               disabled={searching || statistics.length === 0}
               startIcon={<Icon icon="solar:download-bold-duotone" width={20} />}
             >
-              导出CSV
+              {t('multi_user_stats.export_button')}
             </Button>
           </Stack>
         </Stack>
@@ -297,7 +299,7 @@ export default function MultiUserStats() {
 
                     <Box>
                       <Typography variant="body2" color="text.secondary">
-                        总请求数
+                        {t('multi_user_stats.cards.total_requests')}
                       </Typography>
                       <Typography variant="h5" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
                         {thousandsSeparator(stat.request_count)}
@@ -306,7 +308,7 @@ export default function MultiUserStats() {
 
                     <Box>
                       <Typography variant="body2" color="text.secondary">
-                        额度消耗
+                        {t('multi_user_stats.cards.quota_consumption')}
                       </Typography>
                       <Typography variant="h5" sx={{ fontWeight: 600, color: theme.palette.success.main }}>
                         ${calculateQuota(stat.quota, 6)}
@@ -316,7 +318,7 @@ export default function MultiUserStats() {
                     <Grid container spacing={1}>
                       <Grid item xs={6}>
                         <Typography variant="caption" color="text.secondary">
-                          输入Tokens
+                          {t('multi_user_stats.cards.prompt_tokens')}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {thousandsSeparator(stat.prompt_tokens)}
@@ -324,7 +326,7 @@ export default function MultiUserStats() {
                       </Grid>
                       <Grid item xs={6}>
                         <Typography variant="caption" color="text.secondary">
-                          输出Tokens
+                          {t('multi_user_stats.cards.completion_tokens')}
                         </Typography>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>
                           {thousandsSeparator(stat.completion_tokens)}
@@ -334,7 +336,7 @@ export default function MultiUserStats() {
 
                     <Box>
                       <Typography variant="caption" color="text.secondary">
-                        请求时长
+                        {t('multi_user_stats.cards.request_time')}
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>
                         {(stat.request_time / 1000).toFixed(2)}s
@@ -352,7 +354,7 @@ export default function MultiUserStats() {
             <Grid item xs={12} lg={6}>
               <MainCard sx={{ borderRadius: '16px' }}>
                 <Typography variant="h3" sx={{ mb: 2, fontWeight: 600 }}>
-                  用户额度消耗对比
+                  {t('multi_user_stats.charts.quota_comparison')}
                 </Typography>
                 <Paper elevation={0} sx={{ bgcolor: 'transparent', p: 2 }}>
                   <ReactApexChart options={quotaChartData.options} series={quotaChartData.series} type="bar" height={400} />
@@ -364,7 +366,7 @@ export default function MultiUserStats() {
             <Grid item xs={12} lg={6}>
               <MainCard sx={{ borderRadius: '16px' }}>
                 <Typography variant="h3" sx={{ mb: 2, fontWeight: 600 }}>
-                  不同用户模型调用分布
+                  {t('multi_user_stats.charts.model_distribution')}
                 </Typography>
                 {modelUsage.length > 0 ? (
                   <Paper elevation={0} sx={{ bgcolor: 'transparent', p: 2 }}>
@@ -382,7 +384,7 @@ export default function MultiUserStats() {
                     }}
                   >
                     <Typography variant="h4" color="text.secondary">
-                      暂无数据
+                      {t('multi_user_stats.charts.no_data')}
                     </Typography>
                   </Box>
                 )}
@@ -396,7 +398,7 @@ export default function MultiUserStats() {
         <Card sx={{ p: 6, textAlign: 'center' }}>
           <Icon icon="solar:chart-2-bold-duotone" width={80} color={theme.palette.text.disabled} />
           <Typography variant="h4" color="text.secondary" sx={{ mt: 2 }}>
-            请输入查询条件并点击&quot;查询统计&quot;按钮
+            {t('multi_user_stats.messages.search_hint')}
           </Typography>
         </Card>
       )}

@@ -1,6 +1,9 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
+import 'dayjs/locale/zh-tw';
+import 'dayjs/locale/ja';
+import { useTranslation } from 'react-i18next';
 
 import {
   Alert,
@@ -36,16 +39,20 @@ import { API } from 'utils/api';
 import { copy, showError, showSuccess } from 'utils/common';
 import { UserContext } from 'contexts/UserContext';
 
-const formatTime = (timestamp) => {
+const formatTime = (timestamp, t) => {
   if (!timestamp) {
-    return '永久';
+    return t('private_groups.time.permanent');
   }
   return dayjs.unix(timestamp).format('YYYY-MM-DD HH:mm:ss');
 };
 
-const renderModels = (models = []) => {
+const renderModels = (models = [], t) => {
   if (!models.length) {
-    return <Typography variant="body2" color="text.secondary">暂无模型</Typography>;
+    return (
+      <Typography variant="body2" color="text.secondary">
+        {t('private_groups.time.no_models')}
+      </Typography>
+    );
   }
   return (
     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -56,7 +63,10 @@ const renderModels = (models = []) => {
   );
 };
 
+const isSuccessResponse = (response) => response?.data?.success === true;
+
 export default function PrivateGroups() {
+  const { t, i18n } = useTranslation();
   const { loadUserGroup } = useContext(UserContext);
   const [loading, setLoading] = useState(false);
   const [managing, setManaging] = useState(false);
@@ -77,22 +87,31 @@ export default function PrivateGroups() {
   const [inviteExpiresAt, setInviteExpiresAt] = useState(null);
   const [createdInviteCode, setCreatedInviteCode] = useState('');
   const [createdInviteCodeVisible, setCreatedInviteCodeVisible] = useState(false);
+  const pickerLocale = useMemo(() => {
+    switch (i18n.resolvedLanguage) {
+      case 'zh_CN':
+        return 'zh-cn';
+      case 'zh_HK':
+        return 'zh-tw';
+      case 'ja_JP':
+        return 'ja';
+      default:
+        return 'en';
+    }
+  }, [i18n.resolvedLanguage]);
 
   const loadPageData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ownedRes, joinedRes] = await Promise.all([
-        API.get('/api/user/private-groups'),
-        API.get('/api/user/private-groups/joined')
-      ]);
-      if (ownedRes.data.success) {
+      const [ownedRes, joinedRes] = await Promise.all([API.get('/api/user/private-groups'), API.get('/api/user/private-groups/joined')]);
+      if (isSuccessResponse(ownedRes)) {
         setOwnedGroups(ownedRes.data.data || []);
-      } else {
+      } else if (ownedRes?.data?.message) {
         showError(ownedRes.data.message);
       }
-      if (joinedRes.data.success) {
+      if (isSuccessResponse(joinedRes)) {
         setJoinedGroups(joinedRes.data.data || []);
-      } else {
+      } else if (joinedRes?.data?.message) {
         showError(joinedRes.data.message);
       }
     } catch (error) {
@@ -109,14 +128,14 @@ export default function PrivateGroups() {
         API.get(`/api/user/private-groups/${groupId}/invite-codes`),
         API.get(`/api/user/private-groups/${groupId}/members`)
       ]);
-      if (codesRes.data.success) {
+      if (isSuccessResponse(codesRes)) {
         setInviteCodes(codesRes.data.data || []);
-      } else {
+      } else if (codesRes?.data?.message) {
         showError(codesRes.data.message);
       }
-      if (membersRes.data.success) {
+      if (isSuccessResponse(membersRes)) {
         setMembers(membersRes.data.data || []);
-      } else {
+      } else if (membersRes?.data?.message) {
         showError(membersRes.data.message);
       }
     } catch (error) {
@@ -136,17 +155,17 @@ export default function PrivateGroups() {
 
   const handleCreateGroup = async () => {
     if (!groupSlug.trim()) {
-      showError('请输入分组名');
+      showError(t('private_groups.messages.enter_group_slug'));
       return;
     }
     setCreating(true);
     try {
       const res = await API.post('/api/user/private-groups', { group_slug: groupSlug.trim() });
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess('私有分组创建成功');
+      showSuccess(t('private_groups.messages.create_success'));
       setGroupSlug('');
       await Promise.all([loadPageData(), refreshUserGroups()]);
     } catch (error) {
@@ -158,18 +177,22 @@ export default function PrivateGroups() {
 
   const handleRedeemCode = async () => {
     if (!redeemCode.trim()) {
-      showError('请输入邀请码');
+      showError(t('private_groups.messages.enter_invite_code'));
       return;
     }
     setRedeeming(true);
     try {
       const res = await API.post('/api/user/private-groups/redeem', { code: redeemCode.trim() });
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
       const joinedGroup = res.data.data?.group?.group_slug;
-      showSuccess(joinedGroup ? `已加入私有分组 ${joinedGroup}` : '邀请码兑换成功');
+      showSuccess(
+        joinedGroup
+          ? t('private_groups.messages.redeem_success_joined', { slug: joinedGroup })
+          : t('private_groups.messages.redeem_success')
+      );
       setRedeemCode('');
       await Promise.all([loadPageData(), refreshUserGroups()]);
     } catch (error) {
@@ -205,16 +228,16 @@ export default function PrivateGroups() {
       return;
     }
     if (!renameSlug.trim()) {
-      showError('请输入新的分组名');
+      showError(t('private_groups.rename.enter_new_slug'));
       return;
     }
     try {
       const res = await API.put(`/api/user/private-groups/${selectedGroup.id}`, { group_slug: renameSlug.trim() });
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess('分组重命名成功');
+      showSuccess(t('private_groups.rename.success'));
       setRenameVisible(false);
       if (manageVisible) {
         closeManage();
@@ -226,16 +249,16 @@ export default function PrivateGroups() {
   };
 
   const handleDeleteGroup = async (group) => {
-    if (!window.confirm(`确认删除私有分组 ${group.group_slug} 吗？删除前请先解绑相关 token 和 TOKIAME_GROUP。`)) {
+    if (!window.confirm(t('private_groups.messages.delete_confirm', { slug: group.group_slug }))) {
       return;
     }
     try {
       const res = await API.delete(`/api/user/private-groups/${group.id}`);
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess('分组删除成功');
+      showSuccess(t('private_groups.messages.delete_success'));
       if (selectedGroup?.id === group.id) {
         closeManage();
       }
@@ -255,11 +278,11 @@ export default function PrivateGroups() {
         max_uses: inviteMaxUses || 1,
         expires_at: inviteExpiresAt ? Math.floor(inviteExpiresAt.valueOf() / 1000) : 0
       });
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess('邀请码生成成功');
+      showSuccess(t('private_groups.messages.invite_generate_success'));
       setCreatedInviteCode(res.data.data?.invite_code || '');
       setCreatedInviteCodeVisible(!!res.data.data?.invite_code);
       setInviteMaxUses(1);
@@ -279,11 +302,11 @@ export default function PrivateGroups() {
     const nextStatus = record.status === 1 ? 2 : 1;
     try {
       const res = await API.patch(`/api/user/private-groups/${selectedGroup.id}/invite-codes/${record.id}`, { status: nextStatus });
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess(nextStatus === 1 ? '邀请码已启用' : '邀请码已停用');
+      showSuccess(nextStatus === 1 ? t('private_groups.manage.status_enabled') : t('private_groups.manage.status_disabled'));
       await loadManageData(selectedGroup.id);
     } catch (error) {
       showError(error);
@@ -294,16 +317,16 @@ export default function PrivateGroups() {
     if (!selectedGroup) {
       return;
     }
-    if (!window.confirm(`确认撤销 ${member.display_name || member.username || member.user_id} 的分组权限吗？`)) {
+    if (!window.confirm(t('private_groups.manage.revoke_confirm', { user: member.display_name || member.username || member.user_id }))) {
       return;
     }
     try {
       const res = await API.delete(`/api/user/private-groups/${selectedGroup.id}/members/${member.user_id}`);
-      if (!res.data.success) {
+      if (!isSuccessResponse(res)) {
         showError(res.data.message);
         return;
       }
-      showSuccess('成员权限已撤销');
+      showSuccess(t('private_groups.manage.revoke_success'));
       await loadManageData(selectedGroup.id);
     } catch (error) {
       showError(error);
@@ -312,41 +335,41 @@ export default function PrivateGroups() {
 
   const ownedColumns = useMemo(
     () => [
-      { key: 'group_slug', label: '分组名' },
-      { key: 'member_count', label: '成员数' },
-      { key: 'invite_code_count', label: '可用邀请码' },
-      { key: 'created_at', label: '创建时间' }
+      { key: 'group_slug', label: t('private_groups.table.group_slug') },
+      { key: 'member_count', label: t('private_groups.table.member_count') },
+      { key: 'invite_code_count', label: t('private_groups.table.invite_code_count') },
+      { key: 'created_at', label: t('private_groups.table.created_at') }
     ],
-    []
+    [t]
   );
 
   return (
     <>
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={5}>
         <Stack direction="column" spacing={1}>
-          <Typography variant="h2">私有分组</Typography>
+          <Typography variant="h2">{t('private_groups.title')}</Typography>
           <Typography variant="subtitle1" color="text.secondary">
-            Private Groups
+            {t('private_groups.description')}
           </Typography>
         </Stack>
       </Stack>
 
       <Stack spacing={3}>
         <Alert severity="info">
-          先创建一个全局唯一的分组名，再把你的 Tokiame 节点 <b>TOKIAME_GROUP</b> 设置成同名值。只有拥有该私有分组或已加入该私有分组的用户才能用它注册 worker；邀请码只负责授权其他用户可见和可用。
+          <Box component="span" dangerouslySetInnerHTML={{ __html: t('private_groups.alert_info') }} />
         </Alert>
 
         <Grid container spacing={3}>
           <Grid item xs={12} lg={6}>
             <Card sx={{ p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h4">创建私有分组</Typography>
+                <Typography variant="h4">{t('private_groups.create_title')}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  组名只允许小写字母、数字和连字符，长度 3-64。
+                  {t('private_groups.create_desc')}
                 </Typography>
                 <TextField
-                  label="分组名"
-                  placeholder="例如 my-tokiame-group"
+                  label={t('private_groups.group_slug_label')}
+                  placeholder={t('private_groups.group_slug_placeholder')}
                   value={groupSlug}
                   onChange={(event) => setGroupSlug(event.target.value)}
                   fullWidth
@@ -357,7 +380,7 @@ export default function PrivateGroups() {
                   onClick={handleCreateGroup}
                   disabled={creating}
                 >
-                  创建分组
+                  {t('private_groups.create_button')}
                 </Button>
               </Stack>
             </Card>
@@ -365,13 +388,13 @@ export default function PrivateGroups() {
           <Grid item xs={12} lg={6}>
             <Card sx={{ p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h4">兑换邀请码</Typography>
+                <Typography variant="h4">{t('private_groups.redeem_title')}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  兑换成功后，你会立即获得对应私有组的模型可见性和使用权。
+                  {t('private_groups.redeem_desc')}
                 </Typography>
                 <TextField
-                  label="邀请码"
-                  placeholder="ABCD-EFGH-IJKL"
+                  label={t('private_groups.invite_code_label')}
+                  placeholder={t('private_groups.invite_code_placeholder')}
                   value={redeemCode}
                   onChange={(event) => setRedeemCode(event.target.value)}
                   fullWidth
@@ -383,7 +406,7 @@ export default function PrivateGroups() {
                   onClick={handleRedeemCode}
                   disabled={redeeming}
                 >
-                  兑换邀请码
+                  {t('private_groups.redeem_button')}
                 </Button>
               </Stack>
             </Card>
@@ -394,7 +417,7 @@ export default function PrivateGroups() {
           {loading && <LinearProgress />}
           <Box sx={{ p: 3 }}>
             <Typography variant="h4" mb={2}>
-              我创建的私有分组
+              {t('private_groups.owned_groups_title')}
             </Typography>
             <TableContainer component={Paper} variant="outlined">
               <Table>
@@ -403,14 +426,14 @@ export default function PrivateGroups() {
                     {ownedColumns.map((column) => (
                       <TableCell key={column.key}>{column.label}</TableCell>
                     ))}
-                    <TableCell align="right">操作</TableCell>
+                    <TableCell align="right">{t('private_groups.table.actions')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {ownedGroups.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={ownedColumns.length + 1} align="center">
-                        暂无私有分组
+                        {t('private_groups.table.no_groups')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -422,26 +445,27 @@ export default function PrivateGroups() {
                               {group.group_slug}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              状态：{group.status === 1 ? '启用' : '停用'}
+                              {t('private_groups.table.status')}：
+                              {group.status === 1 ? t('private_groups.table.enabled') : t('private_groups.table.disabled')}
                             </Typography>
                           </Stack>
                         </TableCell>
                         <TableCell>{group.member_count}</TableCell>
                         <TableCell>{group.invite_code_count}</TableCell>
-                        <TableCell>{formatTime(group.created_at)}</TableCell>
+                        <TableCell>{formatTime(group.created_at, t)}</TableCell>
                         <TableCell align="right">
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            <Tooltip title="管理分组">
+                            <Tooltip title={t('private_groups.tooltip.manage')}>
                               <IconButton color="primary" onClick={() => openManage(group)}>
                                 <Icon icon="solar:widget-4-bold-duotone" />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="重命名">
+                            <Tooltip title={t('private_groups.tooltip.rename')}>
                               <IconButton color="secondary" onClick={() => openRename(group)}>
                                 <Icon icon="solar:pen-bold-duotone" />
                               </IconButton>
                             </Tooltip>
-                            <Tooltip title="删除">
+                            <Tooltip title={t('private_groups.tooltip.delete')}>
                               <IconButton color="error" onClick={() => handleDeleteGroup(group)}>
                                 <Icon icon="solar:trash-bin-trash-bold-duotone" />
                               </IconButton>
@@ -461,24 +485,24 @@ export default function PrivateGroups() {
           {loading && <LinearProgress />}
           <Box sx={{ p: 3 }}>
             <Typography variant="h4" mb={2}>
-              我已加入的私有分组
+              {t('private_groups.joined_groups_title')}
             </Typography>
             <TableContainer component={Paper} variant="outlined">
               <Table>
                 <TableHead>
                   <TableRow>
-                    <TableCell>分组名</TableCell>
-                    <TableCell>来源</TableCell>
-                    <TableCell>加入时间</TableCell>
-                    <TableCell>过期时间</TableCell>
-                    <TableCell>可用模型</TableCell>
+                    <TableCell>{t('private_groups.table.group_slug')}</TableCell>
+                    <TableCell>{t('private_groups.table.source')}</TableCell>
+                    <TableCell>{t('private_groups.table.joined_at')}</TableCell>
+                    <TableCell>{t('private_groups.table.expires_at')}</TableCell>
+                    <TableCell>{t('private_groups.table.available_models')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {joinedGroups.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} align="center">
-                        暂无已加入的私有分组
+                        {t('private_groups.table.no_joined_groups')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -486,9 +510,9 @@ export default function PrivateGroups() {
                       <TableRow key={group.group_id} hover>
                         <TableCell>{group.group_slug}</TableCell>
                         <TableCell>{group.source || '-'}</TableCell>
-                        <TableCell>{formatTime(group.created_at)}</TableCell>
-                        <TableCell>{formatTime(group.expires_at)}</TableCell>
-                        <TableCell>{renderModels(group.models)}</TableCell>
+                        <TableCell>{formatTime(group.created_at, t)}</TableCell>
+                        <TableCell>{formatTime(group.expires_at, t)}</TableCell>
+                        <TableCell>{renderModels(group.models, t)}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -500,32 +524,34 @@ export default function PrivateGroups() {
       </Stack>
 
       <Dialog open={manageVisible} onClose={closeManage} maxWidth="lg" fullWidth>
-        <DialogTitle>{selectedGroup ? `管理私有分组：${selectedGroup.group_slug}` : '管理私有分组'}</DialogTitle>
+        <DialogTitle>
+          {selectedGroup
+            ? t('private_groups.manage.title', { slug: selectedGroup.group_slug })
+            : t('private_groups.manage.title', { slug: '' })}
+        </DialogTitle>
         <DialogContent dividers>
           {managing && <LinearProgress sx={{ mb: 2 }} />}
           <Stack spacing={3}>
-            <Alert severity="warning">
-              邀请码只在创建时展示一次。请在生成后立即复制并发送给目标用户。
-            </Alert>
+            <Alert severity="warning">{t('private_groups.manage.warning')}</Alert>
 
             <Card variant="outlined" sx={{ p: 2 }}>
               <Stack spacing={2}>
-                <Typography variant="h5">生成邀请码</Typography>
+                <Typography variant="h5">{t('private_groups.manage.generate_invite')}</Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={4}>
                     <TextField
                       type="number"
                       fullWidth
-                      label="最大使用次数"
+                      label={t('private_groups.manage.max_uses')}
                       value={inviteMaxUses}
                       onChange={(event) => setInviteMaxUses(Math.max(1, Number(event.target.value) || 1))}
                       inputProps={{ min: 1 }}
                     />
                   </Grid>
                   <Grid item xs={12} md={8}>
-                    <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="zh-cn">
+                    <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={pickerLocale}>
                       <DateTimePicker
-                        label="过期时间（可选）"
+                        label={t('private_groups.manage.expires_at_optional')}
                         value={inviteExpiresAt}
                         onChange={(value) => setInviteExpiresAt(value)}
                         ampm={false}
@@ -540,32 +566,32 @@ export default function PrivateGroups() {
                   onClick={handleCreateInviteCode}
                   disabled={creatingInviteCode}
                 >
-                  生成邀请码
+                  {t('private_groups.manage.generate_button')}
                 </Button>
               </Stack>
             </Card>
 
             <Box>
               <Typography variant="h5" mb={1.5}>
-                邀请码列表
+                {t('private_groups.manage.invite_list')}
               </Typography>
               <TableContainer component={Paper} variant="outlined">
                 <Table>
                   <TableHead>
                     <TableRow>
-                      <TableCell>ID</TableCell>
-                      <TableCell>状态</TableCell>
-                      <TableCell>已用 / 上限</TableCell>
-                      <TableCell>过期时间</TableCell>
-                      <TableCell>创建时间</TableCell>
-                      <TableCell align="right">操作</TableCell>
+                      <TableCell>{t('private_groups.table.id')}</TableCell>
+                      <TableCell>{t('private_groups.table.status')}</TableCell>
+                      <TableCell>{t('private_groups.table.used_limit')}</TableCell>
+                      <TableCell>{t('private_groups.table.expires_at')}</TableCell>
+                      <TableCell>{t('private_groups.table.created_at')}</TableCell>
+                      <TableCell align="right">{t('private_groups.table.actions')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {inviteCodes.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} align="center">
-                          暂无邀请码
+                          {t('private_groups.manage.no_invites')}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -575,7 +601,7 @@ export default function PrivateGroups() {
                           <TableCell>
                             <Chip
                               size="small"
-                              label={record.status === 1 ? '启用' : '停用'}
+                              label={record.status === 1 ? t('private_groups.table.enabled') : t('private_groups.table.disabled')}
                               color={record.status === 1 ? 'success' : 'default'}
                               variant={record.status === 1 ? 'filled' : 'outlined'}
                             />
@@ -583,8 +609,8 @@ export default function PrivateGroups() {
                           <TableCell>
                             {record.used_count} / {record.max_uses}
                           </TableCell>
-                          <TableCell>{formatTime(record.expires_at)}</TableCell>
-                          <TableCell>{formatTime(record.created_at)}</TableCell>
+                          <TableCell>{formatTime(record.expires_at, t)}</TableCell>
+                          <TableCell>{formatTime(record.created_at, t)}</TableCell>
                           <TableCell align="right">
                             <Button
                               size="small"
@@ -592,7 +618,7 @@ export default function PrivateGroups() {
                               color={record.status === 1 ? 'warning' : 'success'}
                               onClick={() => handleToggleInviteCode(record)}
                             >
-                              {record.status === 1 ? '停用' : '启用'}
+                              {record.status === 1 ? t('private_groups.table.disabled') : t('private_groups.table.enabled')}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -605,25 +631,25 @@ export default function PrivateGroups() {
 
             <Box>
               <Typography variant="h5" mb={1.5}>
-                成员列表
+                {t('private_groups.manage.member_list')}
               </Typography>
               <TableContainer component={Paper} variant="outlined">
                 <Table>
                   <TableHead>
                     <TableRow>
-                      <TableCell>用户</TableCell>
-                      <TableCell>角色</TableCell>
-                      <TableCell>来源</TableCell>
-                      <TableCell>加入时间</TableCell>
-                      <TableCell>过期时间</TableCell>
-                      <TableCell align="right">操作</TableCell>
+                      <TableCell>{t('private_groups.table.user')}</TableCell>
+                      <TableCell>{t('private_groups.table.role')}</TableCell>
+                      <TableCell>{t('private_groups.table.source')}</TableCell>
+                      <TableCell>{t('private_groups.table.joined_at')}</TableCell>
+                      <TableCell>{t('private_groups.table.expires_at')}</TableCell>
+                      <TableCell align="right">{t('private_groups.table.actions')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {members.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} align="center">
-                          暂无成员
+                          {t('private_groups.manage.no_members')}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -637,16 +663,18 @@ export default function PrivateGroups() {
                               </Typography>
                             </Stack>
                           </TableCell>
-                          <TableCell>{member.role}</TableCell>
+                          <TableCell>
+                            {member.role === 'owner' ? t('private_groups.table.role_owner') : t('private_groups.table.role_member')}
+                          </TableCell>
                           <TableCell>{member.source}</TableCell>
-                          <TableCell>{formatTime(member.created_at)}</TableCell>
-                          <TableCell>{formatTime(member.expires_at)}</TableCell>
+                          <TableCell>{formatTime(member.created_at, t)}</TableCell>
+                          <TableCell>{formatTime(member.expires_at, t)}</TableCell>
                           <TableCell align="right">
                             {member.role === 'owner' ? (
-                              <Chip size="small" label="组主" />
+                              <Chip size="small" label={t('private_groups.table.role_owner')} />
                             ) : (
                               <Button size="small" color="error" variant="outlined" onClick={() => handleRevokeMember(member)}>
-                                撤销
+                                {t('private_groups.manage.revoke')}
                               </Button>
                             )}
                           </TableCell>
@@ -660,34 +688,34 @@ export default function PrivateGroups() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeManage}>关闭</Button>
+          <Button onClick={closeManage}>{t('private_groups.manage.close')}</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={renameVisible} onClose={() => setRenameVisible(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>重命名私有分组</DialogTitle>
+        <DialogTitle>{t('private_groups.rename.title')}</DialogTitle>
         <DialogContent dividers>
           <TextField
             fullWidth
-            label="新的分组名"
+            label={t('private_groups.rename.label')}
             value={renameSlug}
             onChange={(event) => setRenameSlug(event.target.value)}
-            placeholder="例如 my-tokiame-group"
+            placeholder={t('private_groups.rename.placeholder')}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRenameVisible(false)}>取消</Button>
+          <Button onClick={() => setRenameVisible(false)}>{t('private_groups.rename.cancel')}</Button>
           <Button onClick={handleRename} variant="contained">
-            保存
+            {t('private_groups.rename.save')}
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={createdInviteCodeVisible} onClose={() => setCreatedInviteCodeVisible(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>邀请码已生成</DialogTitle>
+        <DialogTitle>{t('private_groups.invite_code_dialog.title')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
-            <Alert severity="success">请立即复制邀请码。关闭后系统不会再次展示明文邀请码。</Alert>
+            <Alert severity="success">{t('private_groups.invite_code_dialog.copy_warning')}</Alert>
             <Paper
               variant="outlined"
               sx={{
@@ -705,15 +733,15 @@ export default function PrivateGroups() {
               <Button
                 variant="contained"
                 startIcon={<Icon icon="solar:copy-bold-duotone" />}
-                onClick={() => copy(createdInviteCode, '邀请码')}
+                onClick={() => copy(createdInviteCode, t('private_groups.invite_code_dialog.copied_name'))}
               >
-                复制
+                {t('private_groups.invite_code_dialog.copy')}
               </Button>
             </Paper>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreatedInviteCodeVisible(false)}>关闭</Button>
+          <Button onClick={() => setCreatedInviteCodeVisible(false)}>{t('private_groups.invite_code_dialog.close')}</Button>
         </DialogActions>
       </Dialog>
     </>

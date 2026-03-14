@@ -22,7 +22,7 @@ import {
 import User1 from 'assets/images/users/user-round.svg';
 import useLogin from 'hooks/useLogin';
 import { useTranslation } from 'react-i18next';
-import { calculateQuota } from 'utils/common';
+import { calculateQuota, getLocalizedGroupName } from 'utils/common';
 
 // assets
 import { Icon } from '@iconify/react';
@@ -123,7 +123,7 @@ const ProfileDrawer = ({ open, onClose }) => {
             }}
           >
             <Typography variant="caption" color="primary">
-              {t('userPage.group')}: {userGroup?.[user?.group]?.name || user?.group}（ {t('modelpricePage.rate')}:
+              {t('userPage.group')}: {getLocalizedGroupName(user?.group, userGroup, t)}（ {t('modelpricePage.rate')}:
               {userGroup?.[user?.group]?.ratio || t('dashboard_index.unknown')}/ {t('modelpricePage.RPM')}:
               {userGroup?.[user?.group]?.api_rate || t('dashboard_index.unknown')}）
             </Typography>

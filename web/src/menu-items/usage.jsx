@@ -9,12 +9,12 @@ const icons = {
 
 const usage = {
   id: 'usage',
-  title: 'Usage',
+  title: 'usage',
   type: 'group',
   children: [
     {
       id: 'log',
-      title: '日志',
+      title: 'log',
       type: 'item',
       url: '/panel/log',
       icon: icons.IconArticle,
@@ -22,7 +22,7 @@ const usage = {
     },
     {
       id: 'invoice',
-      title: '月度账单',
+      title: 'invoice',
       type: 'item',
       url: '/panel/invoice',
       icon: icons.IconInvoice,
@@ -30,7 +30,7 @@ const usage = {
     },
     {
       id: 'midjourney',
-      title: 'Midjourney',
+      title: 'midjourney',
       type: 'item',
       url: '/panel/midjourney',
       icon: icons.IconBrush,
@@ -38,7 +38,7 @@ const usage = {
     },
     {
       id: 'task',
-      title: '异步任务',
+      title: 'task',
       type: 'item',
       url: '/panel/task',
       icon: icons.IconList,

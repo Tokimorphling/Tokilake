@@ -46,6 +46,7 @@ func getConfig() base.ProviderConfig {
 		ImagesGenerations:   "/v1/images/generations",
 		ImagesEdit:          "/v1/images/edits",
 		ImagesVariations:    "/v1/images/variations",
+		Videos:              "/v1/videos",
 		ModelList:           "/v1/models",
 		Rerank:              "/v1/rerank",
 		Responses:           "/v1/responses",
@@ -338,19 +339,7 @@ func (p *Provider) doJSONRequest(relayMode int, routeKind string, modelName stri
 		return nil, common.ErrorWrapper(err, "marshal_request_failed", http.StatusInternalServerError)
 	}
 
-	resp, _, requestErr := tokilakesvc.DoTunnelRequest(p.requestContext(), p.Channel.Id, &tokilakesvc.TunnelRequest{
-		RouteKind: routeKind,
-		Method:    http.MethodPost,
-		Path:      path,
-		Model:     modelName,
-		Headers:   p.buildTunnelHeaders(path, "application/json", isStream),
-		IsStream:  isStream,
-		Body:      body,
-	})
-	if requestErr != nil {
-		return nil, common.ErrorWrapperLocal(requestErr, "tokiame_request_failed", http.StatusServiceUnavailable)
-	}
-	return resp, nil
+	return p.doTunnelHTTPRequest(http.MethodPost, path, routeKind, modelName, body, "application/json", isStream)
 }
 
 func (p *Provider) doMultipartRequest(relayMode int, routeKind string, modelName string) (*http.Response, *types.OpenAIErrorWithStatusCode) {
@@ -364,19 +353,28 @@ func (p *Provider) doMultipartRequest(relayMode int, routeKind string, modelName
 		return nil, common.StringErrorWrapperLocal("request body not found", "request_body_not_found", http.StatusInternalServerError)
 	}
 
+	resp, errWithCode := p.doTunnelHTTPRequest(http.MethodPost, path, routeKind, modelName, body, contentType, false)
+	if errWithCode != nil {
+		return nil, errWithCode
+	}
+	if p.Requester.IsFailureStatusCode(resp) {
+		return nil, requester.HandleErrorResp(resp, openai.RequestErrorHandle, p.Requester.IsOpenAI)
+	}
+	return resp, nil
+}
+
+func (p *Provider) doTunnelHTTPRequest(method string, path string, routeKind string, modelName string, body []byte, contentType string, isStream bool) (*http.Response, *types.OpenAIErrorWithStatusCode) {
 	resp, _, requestErr := tokilakesvc.DoTunnelRequest(p.requestContext(), p.Channel.Id, &tokilakesvc.TunnelRequest{
 		RouteKind: routeKind,
-		Method:    http.MethodPost,
+		Method:    method,
 		Path:      path,
 		Model:     modelName,
-		Headers:   p.buildTunnelHeaders(path, contentType, false),
+		Headers:   p.buildTunnelHeaders(path, contentType, isStream),
+		IsStream:  isStream,
 		Body:      body,
 	})
 	if requestErr != nil {
 		return nil, common.ErrorWrapperLocal(requestErr, "tokiame_request_failed", http.StatusServiceUnavailable)
-	}
-	if p.Requester.IsFailureStatusCode(resp) {
-		return nil, requester.HandleErrorResp(resp, openai.RequestErrorHandle, p.Requester.IsOpenAI)
 	}
 	return resp, nil
 }

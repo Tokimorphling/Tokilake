@@ -8,20 +8,21 @@ import (
 )
 
 const (
-	TaskPlatformSuno  = "suno"
-	TaskPlatformKling = "kling"
+	TaskPlatformSuno         = "suno"
+	TaskPlatformKling        = "kling"
+	TaskPlatformTokiameVideo = "tokiame_video"
 )
 
 type TaskStatus string
 
 const (
 	TaskStatusNotStart   TaskStatus = "NOT_START"
-	TaskStatusSubmitted             = "SUBMITTED"
-	TaskStatusQueued                = "QUEUED"
-	TaskStatusInProgress            = "IN_PROGRESS"
-	TaskStatusFailure               = "FAILURE"
-	TaskStatusSuccess               = "SUCCESS"
-	TaskStatusUnknown               = "UNKNOWN"
+	TaskStatusSubmitted  TaskStatus = "SUBMITTED"
+	TaskStatusQueued     TaskStatus = "QUEUED"
+	TaskStatusInProgress TaskStatus = "IN_PROGRESS"
+	TaskStatusFailure    TaskStatus = "FAILURE"
+	TaskStatusSuccess    TaskStatus = "SUCCESS"
+	TaskStatusUnknown    TaskStatus = "UNKNOWN"
 )
 
 type Task struct {
@@ -204,4 +205,17 @@ func GetAllUserTasks(userId int, params *TaskQueryParams) (*DataResult[Task], er
 	}
 
 	return PaginateAndOrder(tx, &params.PaginationParams, &tasks, allowedTaskOrderFields)
+}
+
+func ListUserTasksByPlatform(userId int, platform string, status *TaskStatus, limit int) ([]*Task, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var tasks []*Task
+	tx := DB.Where("user_id = ? and platform = ?", userId, platform)
+	if status != nil {
+		tx = tx.Where("status = ?", *status)
+	}
+	err := tx.Order("submit_time DESC").Limit(limit).Find(&tasks).Error
+	return tasks, err
 }

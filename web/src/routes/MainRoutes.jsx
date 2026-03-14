@@ -80,6 +80,10 @@ const MainRoutes = {
       element: <Token />
     },
     {
+      path: 'private-group',
+      element: <PrivateGroups />
+    },
+    {
       path: 'private-groups',
       element: <PrivateGroups />
     },

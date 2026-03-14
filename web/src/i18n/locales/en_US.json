@@ -16,7 +16,11 @@
   "No matching logs found": "No matching logs found",
   "Search logs...": "Search logs...",
   "invite_count": "Invite Count",
+  "private_group": "Private Groups",
   "invite_reward": "Invite Reward",
+  "usage": "Usage",
+  "billing": "Billing",
+  "defaultGroup": "Default Group",
   "AZURE_OPENAI_ENDPOINT": "AZURE_OPENAI_ENDPOINT",
   "CheckUpdatesTable": {
     "addNewOnly": "Add New Only",
@@ -533,6 +537,9 @@
     "githubCountError": "An error occurred, retrying {{count}}...",
     "githubError": "The operation failed and redirected to the login interface...",
     "githubLogin": "GitHub login",
+    "googleCountError": "An error occurred, retrying {{count}}...",
+    "googleError": "The operation failed and redirected to the login page...",
+    "googleLogin": "Google Login",
     "larkLogin": "Feishu Login",
     "oidcCountError": "An error occurred, retrying for the {{count}} time...",
     "oidcError": "Operation failed, redirecting to the login page...",
@@ -541,6 +548,7 @@
     "passwordRequired": "Password is required",
     "passwordRest": "Password reset confirmation",
     "qrCode": "QR code",
+    "useGoogleLogin": "Log in with Google",
     "useGithubLogin": "Log in using Github",
     "useLarkLogin": "Log in using Feishu",
     "useOIDCLogin": "Use OIDC Login",
@@ -783,6 +791,7 @@
     "changeEmail": "Change Email",
     "displayName": "Display Name",
     "generateToken": "Generate Access Token",
+    "google": "Google",
     "inputDisplayNamePlaceholder": "Enter display name",
     "inputPasswordPlaceholder": "Enter password",
     "inputUsernamePlaceholder": "Enter username",
@@ -807,7 +816,7 @@
     "username": "Username",
     "usernameMinLength": "Username must be at least 3 characters long",
     "usernameRequired": "Username cannot be empty",
-    "wechatBindSuccess": "WeChat account successfully bound!",
+    "wechatBindSuccess": "WeChat account bound successfully!",
     "yourTokenIs": "Your access token is:",
     "registerWebauthn": "Register WebAuthn Credential",
     "webauthnManagement": "WebAuthn Credential Management",
@@ -877,7 +886,9 @@
     "verificationInfo": "Please try again in a few seconds, Turnstile is checking the user environment!"
   },
   "registerPage": {
-    "alreadyHaveAccount": "Already have an account? Click to login"
+    "alreadyHaveAccount": "Already have an account? Click to login",
+    "googleOnlyRegister": "Sign up / Log in with Google",
+    "passwordRegisterDisabled": "Password registration is disabled. Return to the login page and use an enabled sign-in method."
   },
   "res_time": {
     "lastTime": "Last speed test time:",
@@ -1117,6 +1128,9 @@
       "configureLoginRegister": {
         "emailVerification": "Email Verification Required for Password Register",
         "gitHubOAuth": "Allow Login & Register via GitHub",
+        "googleOAuth": "Allow Login via Google",
+        "googleOnlyRegister": "Only allow Google to register new users",
+        "webauthnAuth": "Allow WebAuthn Login",
         "gitHubOldIdClose": "Disable logging in with old GitHub ID.",
         "larkAuth": "Allow Login & Register via Lark",
         "oidcAuth": "Enable login & registration via OIDC account",
@@ -1126,6 +1140,19 @@
         "title": "Configure Login and Register",
         "turnstileCheck": "Enable Turnstile User Verification",
         "weChatAuth": "Allow Login & Register via WeChat"
+      },
+      "configureGoogleOAuthApp": {
+        "alert1": "Set Authorized JavaScript origins to",
+        "alert2": ", and Authorized redirect URIs to",
+        "clientId": "Google Client ID",
+        "clientIdPlaceholder": "Enter your Google OAuth Client ID",
+        "clientSecret": "Google Client Secret",
+        "clientSecretPlaceholder": "Sensitive information will not be displayed on the frontend",
+        "manage": "manage your Google OAuth credentials.",
+        "manageLink": "Click here to ",
+        "saveButton": "Save Google OAuth Settings",
+        "subTitle": "To support login and registration via Google, ",
+        "title": "Configure Google OAuth App"
       },
       "configureOIDCAuthorization": {
         "alert1": "Fill in the homepage link",
@@ -1605,5 +1632,134 @@
       }
     }
   },
-  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "Fill in here to disable the streaming model. Note: If you fill in to disable the streaming model, these models will be skipped for streaming requests on that channel."
+  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "Fill in here to disable the streaming model. Note: If you fill in to disable the streaming model, these models will be skipped for streaming requests on that channel.",
+  "multi_user_stats": {
+    "title": "Multi-User Token Statistics",
+    "description": "Multi-User Token Statistics",
+    "subtitle": "Query all token usage statistics for multiple users",
+    "usernames_label": "Usernames (Multiple separated by commas)",
+    "usernames_placeholder": "Example: user1, user2, user3",
+    "usernames_helper": "Enter one or more usernames, separated by commas",
+    "start_date": "Start Date",
+    "end_date": "End Date",
+    "query_button": "Query Statistics",
+    "export_button": "Export CSV",
+    "messages": {
+      "enter_usernames": "Please enter usernames",
+      "no_data": "Query successful, but no data found",
+      "data_found": "Query successful, found data for {{count}} users",
+      "query_failed": "Query failed: ",
+      "export_failed": "Export failed: ",
+      "export_success": "CSV exported successfully",
+      "search_hint": "Please enter query conditions and click the \"Query Statistics\" button"
+    },
+    "charts": {
+      "quota_consumption": "Quota Consumption",
+      "total_calls": "Total Calls",
+      "unit_times": " times",
+      "quota_comparison": "User Quota Consumption Comparison",
+      "model_distribution": "Model Call Distribution Across Users",
+      "no_data": "No data available"
+    },
+    "cards": {
+      "total_requests": "Total Requests",
+      "quota_consumption": "Quota Consumption",
+      "prompt_tokens": "Prompt Tokens",
+      "completion_tokens": "Completion Tokens",
+      "request_time": "Request Duration",
+      "status": "Status"
+    }
+  },
+  "private_groups": {
+    "title": "Private Groups",
+    "description": "Create private groups and share them with other users through invite codes. Joined users can access the models exposed by that group.",
+    "alert_info": "<strong>Private groups</strong> are useful for sharing dedicated models or worker nodes. Create invite codes for other users, and joined members automatically gain access to the group's available models.",
+    "create_title": "Create Private Group",
+    "create_desc": "After creation, you become the group owner and can manage invite codes and members.",
+    "create_button": "Create Group",
+    "redeem_title": "Redeem Invite Code",
+    "redeem_desc": "Enter an invite code shared by another user to join that private group.",
+    "redeem_button": "Redeem Code",
+    "group_slug_label": "Group Slug",
+    "group_slug_placeholder": "For example: my-tokiame-group",
+    "invite_code_label": "Invite Code",
+    "invite_code_placeholder": "Enter an invite code",
+    "owned_groups_title": "Private Groups I Created",
+    "joined_groups_title": "Private Groups I Joined",
+    "messages": {
+      "enter_group_slug": "Please enter a group name",
+      "create_success": "Private group created successfully",
+      "enter_invite_code": "Please enter an invite code",
+      "redeem_success": "Invite code redeemed successfully",
+      "redeem_success_joined": "Joined private group {{slug}} successfully",
+      "delete_confirm": "Delete private group {{slug}}? This action cannot be undone.",
+      "delete_success": "Private group deleted",
+      "invite_generate_success": "Invite code generated successfully"
+    },
+    "rename": {
+      "title": "Rename Private Group",
+      "label": "New Group Name",
+      "placeholder": "For example: my-tokiame-group",
+      "enter_new_slug": "Please enter a new group name",
+      "success": "Private group renamed",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "tooltip": {
+      "manage": "Manage group",
+      "rename": "Rename",
+      "delete": "Delete group"
+    },
+    "time": {
+      "permanent": "Permanent",
+      "no_models": "No models"
+    },
+    "table": {
+      "group_slug": "Group Slug",
+      "member_count": "Members",
+      "invite_code_count": "Invite Codes",
+      "created_at": "Created At",
+      "status": "Status",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "actions": "Actions",
+      "no_groups": "No private groups yet",
+      "source": "Source",
+      "joined_at": "Joined At",
+      "expires_at": "Expires At",
+      "available_models": "Available Models",
+      "no_joined_groups": "You have not joined any private groups yet",
+      "id": "Invite Code",
+      "used_limit": "Usage",
+      "user": "User",
+      "role": "Role",
+      "role_owner": "Owner",
+      "role_member": "Member"
+    },
+    "manage": {
+      "title": "Manage Private Group {{slug}}",
+      "warning": "Plain invite codes are shown only once after creation. Copy them immediately and store them safely.",
+      "generate_invite": "Generate Invite Code",
+      "max_uses": "Max Uses",
+      "expires_at_optional": "Expires At (Optional)",
+      "generate_button": "Generate Invite Code",
+      "invite_list": "Invite Code List",
+      "no_invites": "No invite codes yet",
+      "member_list": "Member List",
+      "no_members": "No members yet",
+      "revoke": "Remove Member",
+      "revoke_confirm": "Remove member {{user}}?",
+      "revoke_success": "Member removed",
+      "status_enabled": "Invite code enabled",
+      "status_disabled": "Invite code disabled",
+      "close": "Close"
+    },
+    "invite_code_dialog": {
+      "title": "Invite Code Generated",
+      "copy_warning": "Copy the invite code now. The plaintext code will not be shown again after this dialog is closed.",
+      "copy": "Copy",
+      "close": "Close",
+      "copied_name": "invite code"
+    }
+  }
 }

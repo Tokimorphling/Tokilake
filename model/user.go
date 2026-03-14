@@ -27,6 +27,7 @@ type User struct {
 	Email            string         `json:"email" gorm:"index" validate:"max=50"`
 	AvatarUrl        string         `json:"avatar_url" gorm:"type:varchar(500);column:avatar_url;default:''"`
 	OidcId           string         `json:"oidc_id" gorm:"column:oidc_id;index"`
+	GoogleId         string         `json:"google_id" gorm:"column:google_id;index"`
 	GitHubId         string         `json:"github_id" gorm:"column:github_id;index"`
 	GitHubIdNew      int            `json:"github_id_new" gorm:"column:github_id_new;index"`
 	WeChatId         string         `json:"wechat_id" gorm:"column:wechat_id;index"`
@@ -303,6 +304,17 @@ func (user *User) FillUserByOidcId() error {
 	return nil
 }
 
+func (user *User) FillUserByGoogleId() error {
+	if user.GoogleId == "" {
+		return errors.New("Google ID 为空！")
+	}
+	err := DB.Where(User{GoogleId: user.GoogleId}).First(user)
+	if err != nil {
+		return err.Error
+	}
+	return nil
+}
+
 func (user *User) FillUserByUsername() error {
 	if user.Username == "" {
 		return errors.New("username 为空！")
@@ -345,6 +357,10 @@ func IsWeChatIdAlreadyTaken(wechatId string) bool {
 
 func IsGitHubIdAlreadyTaken(githubId string) bool {
 	return IsFieldAlreadyTaken("github_id", githubId)
+}
+
+func IsGoogleIdAlreadyTaken(googleId string) bool {
+	return IsFieldAlreadyTaken("google_id", googleId)
 }
 
 func IsGitHubIdNewAlreadyTaken(githubIdNew int) bool {

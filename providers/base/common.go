@@ -27,6 +27,7 @@ type ProviderConfig struct {
 	ImagesGenerations   string
 	ImagesEdit          string
 	ImagesVariations    string
+	Videos              string
 	ModelList           string
 	Rerank              string
 	ChatRealtime        string
@@ -46,6 +47,7 @@ func (pc *ProviderConfig) SetAPIUri(customMapping map[string]interface{}) {
 		config.RelayModeImagesEdits:        &pc.ImagesEdit,
 		config.RelayModeImagesVariations:   &pc.ImagesVariations,
 		config.RelayModeResponses:          &pc.Responses,
+		config.RelayModeVideos:             &pc.Videos,
 	}
 
 	for key, value := range customMapping {
@@ -208,6 +210,8 @@ func (p *BaseProvider) GetAPIUri(relayMode int) string {
 		return p.Config.ChatRealtime
 	case config.RelayModeResponses:
 		return p.Config.Responses
+	case config.RelayModeVideos:
+		return p.Config.Videos
 	default:
 		return ""
 	}

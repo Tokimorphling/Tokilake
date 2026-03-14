@@ -257,10 +257,10 @@ func GitHubOAuth(c *gin.Context) {
 
 	// 如果用户不存在，则创建用户
 	if user == nil {
-		if !config.RegisterEnabled {
+		if err := validateNewUserRegistration("github"); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "管理员关闭了新用户注册",
+				"message": err.Error(),
 			})
 			return
 		}

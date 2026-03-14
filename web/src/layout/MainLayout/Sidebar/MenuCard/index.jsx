@@ -8,6 +8,7 @@ import User1 from 'assets/images/users/user-round.svg';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '@iconify/react';
+import { getLocalizedGroupName } from 'utils/common';
 
 const CardStyle = styled(Card)(({ theme }) => ({
   background: theme.palette.mode === 'dark' ? alpha(theme.palette.background.paper, 0.8) : alpha(theme.palette.background.paper, 0.9),
@@ -148,7 +149,7 @@ const MenuCard = () => {
                   <Stack direction="row" spacing={0.5} alignItems="center">
                     {/*<Icon icon="solar:heart-bold" color={theme.palette.error.main} width={12} />*/}
                     <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 500 }}>
-                      {userGroup[user.group].name} | RPM:{userGroup[user.group].api_rate}
+                      {getLocalizedGroupName(user.group, userGroup, t)} | RPM:{userGroup[user.group].api_rate}
                     </Typography>
                   </Stack>
                 }

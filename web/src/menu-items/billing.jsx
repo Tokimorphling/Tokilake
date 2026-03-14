@@ -7,12 +7,12 @@ const icons = {
 
 const Billing = {
   id: 'billing',
-  title: 'Billing',
+  title: 'billing',
   type: 'group',
   children: [
     {
       id: 'topup',
-      title: '充值',
+      title: 'topup',
       type: 'item',
       url: '/panel/topup',
       icon: icons.IconCreditCard,
@@ -20,7 +20,7 @@ const Billing = {
     },
     {
       id: 'model_price',
-      title: '可用模型',
+      title: 'model_price',
       type: 'item',
       url: '/panel/model_price',
       icon: icons.IconBrandGithubCopilot,

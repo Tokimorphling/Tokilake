@@ -22,6 +22,9 @@ const (
 	TunnelRouteKindImagesGenerations  = "images_generations"
 	TunnelRouteKindImagesEdits        = "images_edits"
 	TunnelRouteKindImagesVariations   = "images_variations"
+	TunnelRouteKindVideosCreate       = "videos_create"
+	TunnelRouteKindVideosGet          = "videos_get"
+	TunnelRouteKindVideosContent      = "videos_content"
 )
 
 type TunnelRequest struct {

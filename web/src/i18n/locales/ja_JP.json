@@ -16,7 +16,12 @@
   "No matching logs found": "一致するログが見つかりません",
   "Search logs...": "ログを検索...",
   "invite_count": "招待人数",
+  "private_group": "プライベートグループ",
   "invite_reward": "招待報酬",
+  "log": "ログ",
+  "usage": "使用状況",
+  "billing": "請求",
+  "defaultGroup": "デフォルトグループ",
   "AZURE_OPENAI_ENDPOINT": "AZURE_OPENAI_ENDPOINT",
   "CheckUpdatesTable": {
     "addNewOnly": "新規追加のみ",
@@ -399,7 +404,6 @@
     "inviteUrlLabel": "招待リンク"
   },
   "jump": "リダイレクト中...",
-  "log": "ログ",
   "invoice": "月次請求書",
   "midjourney": "Midjourney",
   "invoice_index": {
@@ -514,6 +518,9 @@
     "githubCountError": "エラーが発生しました。{{count}} を再試行しています...",
     "githubError": "操作が失敗し、ログイン インターフェイスにリダイレクトされました...",
     "githubLogin": "GitHub ログイン",
+    "googleCountError": "エラーが発生しました。{{count}} を再試行しています...",
+    "googleError": "操作に失敗し、ログインページへリダイレクトしています...",
+    "googleLogin": "Google ログイン",
     "larkLogin": "フェイシュログイン",
     "oidcCountError": "{{count}} 回目のリトライ中にエラーが発生しました...",
     "oidcError": "操作失敗、ログインページにリダイレクト中...",
@@ -522,6 +529,7 @@
     "passwordRequired": "パスワードは必須です",
     "passwordRest": "パスワードリセットの確認",
     "qrCode": "QRコード",
+    "useGoogleLogin": "Google でログイン",
     "useGithubLogin": "Github を使用してログインする",
     "useLarkLogin": "フェイシュでログイン",
     "useOIDCLogin": "OIDC ログインを使用する",
@@ -781,6 +789,7 @@
     "inputUsernamePlaceholder": "ユーザー名を入力してください",
     "keepSafe": "安全に保管してください。漏洩した場合はすぐにリセットしてください。",
     "lark": "Lark",
+    "google": "Google",
     "notBound": "未バインド",
     "other": "その他",
     "password": "パスワード",
@@ -870,7 +879,9 @@
     "verificationInfo": "数秒後に再試行してください。Turnstile がユーザー環境をチェックしています！"
   },
   "registerPage": {
-    "alreadyHaveAccount": "既にアカウントをお持ちですか？ログインをクリック"
+    "alreadyHaveAccount": "既にアカウントをお持ちですか？ログインをクリック",
+    "googleOnlyRegister": "Google で登録 / ログイン",
+    "passwordRegisterDisabled": "パスワード登録は無効です。ログインページに戻って、有効なログイン方法を使用してください。"
   },
   "res_time": {
     "lastTime": "前回のスピードテスト時間:",
@@ -1111,6 +1122,9 @@
       "configureLoginRegister": {
         "emailVerification": "パスワード登録時にメール認証が必要",
         "gitHubOAuth": "GitHubアカウントでのログイン＆登録を許可",
+        "googleOAuth": "Google アカウントでのログインを許可",
+        "googleOnlyRegister": "新規ユーザー登録は Google のみ許可",
+        "webauthnAuth": "WebAuthn ログインを許可",
         "gitHubOldIdClose": "GitHub の古い ID ログインを閉じる",
         "larkAuth": "Larkでのログイン＆登録を許可",
         "oidcAuth": "OIDCアカウントを使用してログイン＆登録を許可",
@@ -1120,6 +1134,19 @@
         "title": "ログインと登録の設定",
         "turnstileCheck": "Turnstileユーザー検証を有効にする",
         "weChatAuth": "WeChatでのログイン＆登録を許可"
+      },
+      "configureGoogleOAuthApp": {
+        "alert1": "Authorized JavaScript origins に",
+        "alert2": "、Authorized redirect URIs に",
+        "clientId": "Google Client ID",
+        "clientIdPlaceholder": "Google OAuth Client ID を入力してください",
+        "clientSecret": "Google Client Secret",
+        "clientSecretPlaceholder": "機密情報はフロントエンドに表示されません",
+        "manage": "Google OAuth 認証情報を管理します。",
+        "manageLink": "こちらをクリックして",
+        "saveButton": "Google OAuth 設定を保存",
+        "subTitle": "Google でのログインと登録をサポートするための設定です。",
+        "title": "Google OAuth アプリの設定"
       },
       "configureOIDCAuthorization": {
         "alert1": "ホームページリンクを入力してください",
@@ -1578,5 +1605,134 @@
       }
     }
   },
-  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "ここには、ストリーミングを無効にするモデルを記入してください。注意：ストリーミングを無効にするモデルを記入した場合、これらのモデルはストリームリクエスト時にそのチャンネルをスキップします。"
+  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "ここには、ストリーミングを無効にするモデルを記入してください。注意：ストリーミングを無効にするモデルを記入した場合、これらのモデルはストリームリクエスト時にそのチャンネルをスキップします。",
+  "multi_user_stats": {
+    "title": "多ユーザー統計",
+    "description": "多ユーザートークン統計",
+    "subtitle": "複数ユーザーのすべてのトークン使用統計データをクエリします",
+    "usernames_label": "ユーザー名 (カンマ区切りで複数可)",
+    "usernames_placeholder": "例: user1, user2, user3",
+    "usernames_helper": "1つ以上のユーザー名をカンマ区切りで入力してください",
+    "start_date": "開始日",
+    "end_date": "終了日",
+    "query_button": "統計をクエリ",
+    "export_button": "CSVエクスポート",
+    "messages": {
+      "enter_usernames": "ユーザー名を入力してください",
+      "no_data": "クエリは成功しましたが、データが見つかりませんでした",
+      "data_found": "クエリは成功し、{{count}}人のユーザーデータが見つかりました",
+      "query_failed": "クエリ失敗: ",
+      "export_failed": "エクスポート失敗: ",
+      "export_success": "CSVエクスポートが成功しました",
+      "search_hint": "検索条件を入力し、「統計をクエリ」ボタンをクリックしてください"
+    },
+    "charts": {
+      "quota_consumption": "クォータ消費量",
+      "total_calls": "総呼び出し回数",
+      "unit_times": " 回",
+      "quota_comparison": "ユーザークォータ消費比較",
+      "model_distribution": "ユーザー別のモデル呼び出し分布",
+      "no_data": "データなし"
+    },
+    "cards": {
+      "total_requests": "総リクエスト数",
+      "quota_consumption": "クォータ消費量",
+      "prompt_tokens": "入力トークン",
+      "completion_tokens": "出力トークン",
+      "request_time": "リクエスト時間",
+      "status": "ステータス"
+    }
+  },
+  "private_groups": {
+    "title": "プライベートグループ",
+    "description": "プライベートグループを作成し、招待コードで他のユーザーに共有できます。参加したユーザーは、そのグループで公開されているモデルを利用できます。",
+    "alert_info": "<strong>プライベートグループ</strong> は、専用モデルやワーカーノードの共有に適しています。招待コードを発行して他のユーザーを招待すると、参加後にそのグループの利用可能なモデルへ自動的にアクセスできます。",
+    "create_title": "プライベートグループを作成",
+    "create_desc": "作成後、あなたがグループ所有者となり、招待コードとメンバーを管理できます。",
+    "create_button": "グループを作成",
+    "redeem_title": "招待コードを利用",
+    "redeem_desc": "他のユーザーから共有された招待コードを入力して、対象のプライベートグループに参加します。",
+    "redeem_button": "招待コードを利用",
+    "group_slug_label": "グループ識別子",
+    "group_slug_placeholder": "例: my-tokiame-group",
+    "invite_code_label": "招待コード",
+    "invite_code_placeholder": "招待コードを入力してください",
+    "owned_groups_title": "自分が作成したプライベートグループ",
+    "joined_groups_title": "参加中のプライベートグループ",
+    "messages": {
+      "enter_group_slug": "グループ名を入力してください",
+      "create_success": "プライベートグループを作成しました",
+      "enter_invite_code": "招待コードを入力してください",
+      "redeem_success": "招待コードを利用しました",
+      "redeem_success_joined": "プライベートグループ {{slug}} に参加しました",
+      "delete_confirm": "プライベートグループ {{slug}} を削除しますか？この操作は元に戻せません。",
+      "delete_success": "プライベートグループを削除しました",
+      "invite_generate_success": "招待コードを生成しました"
+    },
+    "rename": {
+      "title": "プライベートグループ名を変更",
+      "label": "新しいグループ名",
+      "placeholder": "例: my-tokiame-group",
+      "enter_new_slug": "新しいグループ名を入力してください",
+      "success": "グループ名を変更しました",
+      "cancel": "キャンセル",
+      "save": "保存"
+    },
+    "tooltip": {
+      "manage": "グループを管理",
+      "rename": "名前を変更",
+      "delete": "グループを削除"
+    },
+    "time": {
+      "permanent": "無期限",
+      "no_models": "モデルなし"
+    },
+    "table": {
+      "group_slug": "グループ識別子",
+      "member_count": "メンバー数",
+      "invite_code_count": "招待コード数",
+      "created_at": "作成日時",
+      "status": "ステータス",
+      "enabled": "有効",
+      "disabled": "無効",
+      "actions": "操作",
+      "no_groups": "プライベートグループはまだありません",
+      "source": "ソース",
+      "joined_at": "参加日時",
+      "expires_at": "有効期限",
+      "available_models": "利用可能なモデル",
+      "no_joined_groups": "参加しているプライベートグループはありません",
+      "id": "招待コード",
+      "used_limit": "利用回数",
+      "user": "ユーザー",
+      "role": "役割",
+      "role_owner": "所有者",
+      "role_member": "メンバー"
+    },
+    "manage": {
+      "title": "プライベートグループ {{slug}} を管理",
+      "warning": "招待コードの平文は作成直後に一度だけ表示されます。すぐにコピーして安全に保管してください。",
+      "generate_invite": "招待コードを生成",
+      "max_uses": "最大利用回数",
+      "expires_at_optional": "有効期限（任意）",
+      "generate_button": "招待コードを生成",
+      "invite_list": "招待コード一覧",
+      "no_invites": "招待コードはまだありません",
+      "member_list": "メンバー一覧",
+      "no_members": "メンバーはまだいません",
+      "revoke": "メンバーを削除",
+      "revoke_confirm": "メンバー {{user}} を削除しますか？",
+      "revoke_success": "メンバーを削除しました",
+      "status_enabled": "招待コードを有効化しました",
+      "status_disabled": "招待コードを無効化しました",
+      "close": "閉じる"
+    },
+    "invite_code_dialog": {
+      "title": "招待コードを生成しました",
+      "copy_warning": "今すぐ招待コードをコピーしてください。このダイアログを閉じると平文コードは再表示されません。",
+      "copy": "コピー",
+      "close": "閉じる",
+      "copied_name": "招待コード"
+    }
+  }
 }

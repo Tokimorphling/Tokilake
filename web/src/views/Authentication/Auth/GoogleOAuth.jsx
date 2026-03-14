@@ -1,28 +1,52 @@
-import { Link } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { showError } from 'utils/common';
+import useLogin from 'hooks/useLogin';
 
-// material-ui
 import { useTheme } from '@mui/material/styles';
-import { Divider, Grid, Stack, Typography, useMediaQuery } from '@mui/material';
+import { Grid, Stack, Typography, useMediaQuery, CircularProgress } from '@mui/material';
 
-// project imports
 import AuthWrapper from '../AuthWrapper';
 import AuthCardWrapper from '../AuthCardWrapper';
-import AuthLogin from '../AuthForms/AuthLogin';
 import Logo from 'ui-component/Logo';
-
 import { useTranslation } from 'react-i18next';
 
-// ================================|| AUTH3 - LOGIN ||================================ //
-
-const Login = () => {
+const GoogleOAuth = () => {
   const { t } = useTranslation();
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('md'));
-  const siteInfo = useSelector((state) => state.siteInfo);
-  const showPasswordRegister = !siteInfo.isLoading && siteInfo.register_enabled && siteInfo.password_register;
-  const showGoogleRegister = !siteInfo.isLoading && siteInfo.google_oauth && siteInfo.google_only_register;
-  const showRegisterEntry = showPasswordRegister || showGoogleRegister;
+
+  const [searchParams] = useSearchParams();
+  const [prompt, setPrompt] = useState(t('common.processing'));
+  const { googleLogin } = useLogin();
+
+  const navigate = useNavigate();
+
+  const sendCode = async (code, state, count) => {
+    const { success, message } = await googleLogin(code, state);
+    if (!success) {
+      if (message) {
+        showError(message);
+      }
+      if (count === 0) {
+        setPrompt(t('login.googleError'));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        navigate('/login');
+        return;
+      }
+      count++;
+      setPrompt(t('login.googleCountError', { count }));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await sendCode(code, state, count);
+    }
+  };
+
+  useEffect(() => {
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    sendCode(code, state, 0).then();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthWrapper>
@@ -42,29 +66,18 @@ const Login = () => {
                       <Grid item>
                         <Stack alignItems="center" justifyContent="center" spacing={1}>
                           <Typography color={theme.palette.primary.main} gutterBottom variant={matchDownSM ? 'h3' : 'h2'}>
-                            {t('menu.login')}
+                            {t('login.googleLogin')}
                           </Typography>
                         </Stack>
                       </Grid>
                     </Grid>
                   </Grid>
-                  <Grid item xs={12}>
-                    <AuthLogin />
+                  <Grid item xs={12} container direction="column" justifyContent="center" alignItems="center" style={{ height: '200px' }}>
+                    <CircularProgress />
+                    <Typography variant="h3" paddingTop={'20px'}>
+                      {prompt}
+                    </Typography>
                   </Grid>
-                  {showRegisterEntry && (
-                    <>
-                      <Grid item xs={12}>
-                        <Divider />
-                      </Grid>
-                      <Grid item xs={12}>
-                        <Grid item container direction="column" alignItems="center" xs={12}>
-                          <Typography component={Link} to="/register" variant="subtitle1" sx={{ textDecoration: 'none' }}>
-                            {t('menu.signup')}
-                          </Typography>
-                        </Grid>
-                      </Grid>
-                    </>
-                  )}
                 </Grid>
               </AuthCardWrapper>
             </Grid>
@@ -75,4 +88,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default GoogleOAuth;

@@ -11,7 +11,7 @@ import (
 )
 
 type Requestable interface {
-	types.CompletionRequest | types.ChatCompletionRequest | types.EmbeddingRequest | types.ModerationRequest | types.SpeechAudioRequest | types.AudioRequest | types.ImageRequest | types.ImageEditRequest
+	types.CompletionRequest | types.ChatCompletionRequest | types.EmbeddingRequest | types.ModerationRequest | types.SpeechAudioRequest | types.AudioRequest | types.ImageRequest | types.ImageEditRequest | types.VideoRequest
 }
 
 // 基础接口
@@ -139,4 +139,11 @@ type ResponsesInterface interface {
 	ProviderInterface
 	CreateResponses(request *types.OpenAIResponsesRequest) (*types.OpenAIResponsesResponses, *types.OpenAIErrorWithStatusCode)
 	CreateResponsesStream(request *types.OpenAIResponsesRequest) (requester.StreamReaderInterface[string], *types.OpenAIErrorWithStatusCode)
+}
+
+type VideoInterface interface {
+	ProviderInterface
+	CreateVideo(request *types.VideoRequest) (*types.VideoTaskObject, *types.OpenAIErrorWithStatusCode)
+	GetVideo(taskID string) (*types.VideoTaskObject, *types.OpenAIErrorWithStatusCode)
+	GetVideoContent(taskID string) (*http.Response, *types.OpenAIErrorWithStatusCode)
 }

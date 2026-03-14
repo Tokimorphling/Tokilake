@@ -13,35 +13,43 @@ const MenuList = ({ isMini = false }) => {
   const userIsAdmin = useIsAdmin();
   const { t } = useTranslation();
   const siteInfo = useSelector((state) => state.siteInfo);
-  menuItem.items.forEach((group) => {
-    group.children.forEach((item) => {
-      item.title = t(item.id);
-    });
+
+  const translateItem = (item) => {
+    const newItem = { ...item };
+    if (newItem.title) {
+      newItem.title = t(newItem.title);
+    } else if (newItem.id) {
+      newItem.title = t(newItem.id);
+    }
+    if (newItem.children) {
+      newItem.children = newItem.children.map(translateItem);
+    }
+    return newItem;
+  };
+
+  const navItems = menuItem.items.map((item) => {
+    const translatedItem = translateItem(item);
+
+    if (translatedItem.type !== 'group') {
+      return (
+        <Typography key={translatedItem.id} variant="h6" color="error" align="center">
+          {t('menu.error')}
+        </Typography>
+      );
+    }
+
+    const filteredChildren = translatedItem.children.filter(
+      (child) => (!child.isAdmin || userIsAdmin) && !(siteInfo.UserInvoiceMonth === false && child.id === 'invoice')
+    );
+
+    if (filteredChildren.length === 0) {
+      return null;
+    }
+
+    return <NavGroup key={translatedItem.id} item={{ ...translatedItem, children: filteredChildren }} isMini={isMini} />;
   });
 
-  return (
-    <>
-      {menuItem.items.map((item) => {
-        if (item.type !== 'group') {
-          return (
-            <Typography key={item.id} variant="h6" color="error" align="center">
-              {t('menu.error')}
-            </Typography>
-          );
-        }
-
-        const filteredChildren = item.children.filter(
-          (child) => (!child.isAdmin || userIsAdmin) && !(siteInfo.UserInvoiceMonth === false && child.id === 'invoice')
-        );
-
-        if (filteredChildren.length === 0) {
-          return null;
-        }
-
-        return <NavGroup key={item.id} item={{ ...item, children: filteredChildren }} isMini={isMini} />;
-      })}
-    </>
-  );
+  return <>{navItems}</>;
 };
 
 export default MenuList;

@@ -17,8 +17,12 @@
   "No logs available": "暫無日誌",
   "No matching logs found": "未找到匹配的日誌",
   "Search logs...": "搜尋日誌...",
-  "invite_count": "邀請人數",
+  "private_group": "私有分組",
+  "log": "日誌",
   "invite_reward": "邀請獎勵",
+  "usage": "使用",
+  "billing": "賬單",
+  "defaultGroup": "預設分組",
   "AZURE_OPENAI_ENDPOINT": "AZURE_OPENAI_ENDPOINT",
   "CheckUpdatesTable": {
     "addNewOnly": "僅添加新增",
@@ -399,7 +403,6 @@
   },
   "jump": "正在跳轉中...",
   "invoice": "月度賬單",
-  "multi_user_stats": "多用戶令牌統計",
   "midjourney": "Midjourney",
   "invoice_index": {
     "invoice": "月度賬單",
@@ -514,6 +517,9 @@
     "githubCountError": "出現錯誤，第 {{count}} 次重試中...",
     "githubError": "操作失敗，正在重定向至登錄界面...",
     "githubLogin": "GitHub 登錄",
+    "googleCountError": "出現錯誤，第 {{count}} 次重試中...",
+    "googleError": "操作失敗，正在重定向至登錄界面...",
+    "googleLogin": "Google 登錄",
     "larkLogin": "飛書 登錄",
     "oidcCountError": "出現錯誤，第 {{count}} 次重試中...",
     "oidcError": "操作失敗，正在重定向至登錄界面...",
@@ -522,6 +528,7 @@
     "passwordRequired": "密碼為必填項",
     "passwordRest": "密碼重置確認",
     "qrCode": "二維碼",
+    "useGoogleLogin": "使用 Google 登錄",
     "useGithubLogin": "使用 GitHub 登錄",
     "useLarkLogin": "使用飛書登錄",
     "useOIDCLogin": "使用 OIDC 登錄",
@@ -778,6 +785,7 @@
     "inputUsernamePlaceholder": "請輸入用戶名",
     "keepSafe": "請妥善保管。如有洩漏，請立即重置。",
     "lark": "飛書",
+    "google": "Google",
     "notBound": "未綁定",
     "other": "其他",
     "password": "密碼",
@@ -867,7 +875,9 @@
     "verificationInfo": "請稍後幾秒重試，Turnstile 正在檢查用戶環境！"
   },
   "registerPage": {
-    "alreadyHaveAccount": "已經有帳號了? 點擊登入"
+    "alreadyHaveAccount": "已經有帳號了? 點擊登入",
+    "googleOnlyRegister": "使用 Google 註冊 / 登錄",
+    "passwordRegisterDisabled": "管理員已關閉密碼註冊。請返回登入頁使用已啟用的登入方式。"
   },
   "res_time": {
     "lastTime": "上次測速時間：",
@@ -1108,6 +1118,9 @@
       "configureLoginRegister": {
         "emailVerification": "通過密碼註冊時需要進行郵箱驗證",
         "gitHubOAuth": "允許通過 GitHub 賬戶登錄 & 註冊",
+        "googleOAuth": "允許通過 Google 賬戶登錄",
+        "googleOnlyRegister": "僅允許通過 Google 註冊新用戶",
+        "webauthnAuth": "允許通過 WebAuthn 登錄",
         "larkAuth": "允許通過飛書登錄 & 註冊",
         "oidcAuth": "允許通過 OIDC 賬戶登錄 & 註冊",
         "passwordLogin": "允許通過密碼進行登錄",
@@ -1117,6 +1130,19 @@
         "turnstileCheck": "啟用 Turnstile 用戶校驗",
         "weChatAuth": "允許通過微信登錄 & 註冊",
         "gitHubOldIdClose": "關閉 GitHub 老 ID 登錄"
+      },
+      "configureGoogleOAuthApp": {
+        "alert1": "Authorized JavaScript origins 填",
+        "alert2": "，Authorized redirect URIs 填",
+        "clientId": "Google Client ID",
+        "clientIdPlaceholder": "請輸入 Google OAuth Client ID",
+        "clientSecret": "Google Client Secret",
+        "clientSecretPlaceholder": "敏感信息不會發送到前端顯示",
+        "manage": "管理你的 Google OAuth 憑證",
+        "manageLink": "點擊此處",
+        "saveButton": "保存 Google OAuth 設置",
+        "subTitle": "用以支持通過 Google 進行登錄註冊，",
+        "title": "配置 Google OAuth 應用"
       },
       "configureOIDCAuthorization": {
         "alert1": "首頁鏈接填",
@@ -1611,5 +1637,134 @@
     }
   },
   "禁用流式的模型": "停用流動式的模型",
-  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "呢度填寫禁用流式嘅模型，注意：如果填寫咗禁用流式嘅模型，咁就會喺流式請求時跳過呢個渠道。"
+  "这里填写禁用流式的模型，注意：如果填写了禁用流式的模型，那么这些模型在流式请求时会跳过该渠道": "呢度填寫禁用流式嘅模型，注意：如果填寫咗禁用流式嘅模型，咁就會喺流式請求時跳過呢個渠道。",
+  "multi_user_stats": {
+    "title": "多用戶令牌統計",
+    "description": "多用戶令牌統計",
+    "subtitle": "查詢多個用戶的所有令牌使用情況統計數據",
+    "usernames_label": "用戶名 (多個用戶名用逗號分隔)",
+    "usernames_placeholder": "例如: user1, user2, user3",
+    "usernames_helper": "輸入一個或多個用戶名,用逗號分隔",
+    "start_date": "開始日期",
+    "end_date": "結束日期",
+    "query_button": "查詢統計",
+    "export_button": "導出CSV",
+    "messages": {
+      "enter_usernames": "請輸入用戶名",
+      "no_data": "查詢成功,但沒有找到數據",
+      "data_found": "查詢成功,找到 {{count}} 個用戶的數據",
+      "query_failed": "查詢失敗: ",
+      "export_failed": "導出失敗: ",
+      "export_success": "CSV導出成功",
+      "search_hint": "請輸入查詢條件並點擊\"查詢統計\"按鈕"
+    },
+    "charts": {
+      "quota_consumption": "額度消耗",
+      "total_calls": "總調用次數",
+      "unit_times": " 次",
+      "quota_comparison": "用戶額度消耗對比",
+      "model_distribution": "不同用戶模型調用分佈",
+      "no_data": "暫無數據"
+    },
+    "cards": {
+      "total_requests": "總請求數",
+      "quota_consumption": "額度消耗",
+      "prompt_tokens": "輸入Tokens",
+      "completion_tokens": "輸出Tokens",
+      "request_time": "請求時長",
+      "status": "狀態"
+    }
+  },
+  "private_groups": {
+    "title": "私有分組",
+    "description": "建立私有分組並透過邀請碼分享給其他用戶，加入後的用戶將獲得該分組開放模型的存取權限。",
+    "alert_info": "<strong>私有分組</strong> 適合共享專屬模型或工作節點。你可以建立邀請碼邀請其他用戶加入，加入成功後會自動獲得該分組的可用模型權限。",
+    "create_title": "建立私有分組",
+    "create_desc": "建立後你將成為分組擁有者，可管理邀請碼和成員。",
+    "create_button": "建立分組",
+    "redeem_title": "兌換邀請碼",
+    "redeem_desc": "輸入其他用戶分享的邀請碼，加入對應的私有分組。",
+    "redeem_button": "兌換邀請碼",
+    "group_slug_label": "分組標識",
+    "group_slug_placeholder": "例如 my-tokiame-group",
+    "invite_code_label": "邀請碼",
+    "invite_code_placeholder": "請輸入邀請碼",
+    "owned_groups_title": "我建立的私有分組",
+    "joined_groups_title": "我加入的私有分組",
+    "messages": {
+      "enter_group_slug": "請輸入分組名",
+      "create_success": "私有分組建立成功",
+      "enter_invite_code": "請輸入邀請碼",
+      "redeem_success": "邀請碼兌換成功",
+      "redeem_success_joined": "已成功加入私有分組 {{slug}}",
+      "delete_confirm": "確定刪除私有分組 {{slug}} 嗎？此操作不可還原。",
+      "delete_success": "私有分組已刪除",
+      "invite_generate_success": "邀請碼建立成功"
+    },
+    "rename": {
+      "title": "重新命名私有分組",
+      "label": "新的分組名",
+      "placeholder": "例如 my-tokiame-group",
+      "enter_new_slug": "請輸入新的分組名",
+      "success": "重新命名成功",
+      "cancel": "取消",
+      "save": "儲存"
+    },
+    "tooltip": {
+      "manage": "管理分組",
+      "rename": "重新命名",
+      "delete": "刪除分組"
+    },
+    "time": {
+      "permanent": "永久",
+      "no_models": "暫無模型"
+    },
+    "table": {
+      "group_slug": "分組標識",
+      "member_count": "成員數",
+      "invite_code_count": "邀請碼數",
+      "created_at": "建立時間",
+      "status": "狀態",
+      "enabled": "啟用",
+      "disabled": "停用",
+      "actions": "操作",
+      "no_groups": "暫無私有分組",
+      "source": "來源",
+      "joined_at": "加入時間",
+      "expires_at": "到期時間",
+      "available_models": "可用模型",
+      "no_joined_groups": "你尚未加入任何私有分組",
+      "id": "邀請碼",
+      "used_limit": "使用次數",
+      "user": "用戶",
+      "role": "角色",
+      "role_owner": "擁有者",
+      "role_member": "成員"
+    },
+    "manage": {
+      "title": "管理私有分組 {{slug}}",
+      "warning": "邀請碼明文只會在建立成功後顯示一次，請及時複製並妥善保管。",
+      "generate_invite": "建立邀請碼",
+      "max_uses": "最大使用次數",
+      "expires_at_optional": "到期時間（可選）",
+      "generate_button": "建立邀請碼",
+      "invite_list": "邀請碼列表",
+      "no_invites": "暫無邀請碼",
+      "member_list": "成員列表",
+      "no_members": "暫無成員",
+      "revoke": "移除成員",
+      "revoke_confirm": "確定移除成員 {{user}} 嗎？",
+      "revoke_success": "成員已移除",
+      "status_enabled": "邀請碼已啟用",
+      "status_disabled": "邀請碼已停用",
+      "close": "關閉"
+    },
+    "invite_code_dialog": {
+      "title": "邀請碼已建立",
+      "copy_warning": "請立即複製邀請碼。關閉後系統不會再次顯示明文邀請碼。",
+      "copy": "複製",
+      "close": "關閉",
+      "copied_name": "邀請碼"
+    }
+  }
 }

@@ -112,6 +112,8 @@ func GetRelayMode(c *gin.Context) int {
 		relayMode = config.RelayModeSuno
 	} else if strings.HasPrefix(path, "/kling") {
 		relayMode = config.RelayModeKling
+	} else if strings.HasPrefix(path, "/v1/videos") {
+		relayMode = config.RelayModeVideos
 	}
 
 	return relayMode

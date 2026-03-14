@@ -32,6 +32,11 @@ const SystemSetting = () => {
     PasswordRegisterEnabled: '',
     EmailVerificationEnabled: '',
     GitHubOAuthEnabled: '',
+    GoogleOAuthEnabled: '',
+    GoogleOnlyRegisterEnabled: '',
+    WebAuthnAuthEnabled: '',
+    GoogleClientId: '',
+    GoogleClientSecret: '',
     GitHubClientId: '',
     GitHubClientSecret: '',
     GitHubOldIdCloseEnabled: '',
@@ -104,6 +109,9 @@ const SystemSetting = () => {
       case 'PasswordRegisterEnabled':
       case 'EmailVerificationEnabled':
       case 'GitHubOAuthEnabled':
+      case 'GoogleOAuthEnabled':
+      case 'GoogleOnlyRegisterEnabled':
+      case 'WebAuthnAuthEnabled':
       case 'GitHubOldIdCloseEnabled':
       case 'WeChatAuthEnabled':
       case 'LarkAuthEnabled':
@@ -156,6 +164,8 @@ const SystemSetting = () => {
       name === 'Notice' ||
       name.startsWith('SMTP') ||
       name === 'ServerAddress' ||
+      name === 'GoogleClientId' ||
+      name === 'GoogleClientSecret' ||
       name === 'GitHubClientId' ||
       name === 'GitHubClientSecret' ||
       name === 'OIDCClientId' ||
@@ -223,6 +233,15 @@ const SystemSetting = () => {
     }
     if (originInputs['GitHubClientSecret'] !== inputs.GitHubClientSecret && inputs.GitHubClientSecret !== '') {
       await updateOption('GitHubClientSecret', inputs.GitHubClientSecret);
+    }
+  };
+
+  const submitGoogleOAuth = async () => {
+    if (originInputs['GoogleClientId'] !== inputs.GoogleClientId) {
+      await updateOption('GoogleClientId', inputs.GoogleClientId);
+    }
+    if (originInputs['GoogleClientSecret'] !== inputs.GoogleClientSecret && inputs.GoogleClientSecret !== '') {
+      await updateOption('GoogleClientSecret', inputs.GoogleClientSecret);
     }
   };
 
@@ -330,8 +349,34 @@ const SystemSetting = () => {
             </Grid>
             <Grid xs={12} md={3}>
               <FormControlLabel
+                label={t('setting_index.systemSettings.configureLoginRegister.googleOAuth')}
+                control={<Checkbox checked={inputs.GoogleOAuthEnabled === 'true'} onChange={handleInputChange} name="GoogleOAuthEnabled" />}
+              />
+            </Grid>
+            <Grid xs={12} md={3}>
+              <FormControlLabel
+                label={t('setting_index.systemSettings.configureLoginRegister.googleOnlyRegister')}
+                control={
+                  <Checkbox
+                    checked={inputs.GoogleOnlyRegisterEnabled === 'true'}
+                    onChange={handleInputChange}
+                    name="GoogleOnlyRegisterEnabled"
+                  />
+                }
+              />
+            </Grid>
+            <Grid xs={12} md={3}>
+              <FormControlLabel
                 label={t('setting_index.systemSettings.configureLoginRegister.gitHubOAuth')}
                 control={<Checkbox checked={inputs.GitHubOAuthEnabled === 'true'} onChange={handleInputChange} name="GitHubOAuthEnabled" />}
+              />
+            </Grid>
+            <Grid xs={12} md={3}>
+              <FormControlLabel
+                label={t('setting_index.systemSettings.configureLoginRegister.webauthnAuth')}
+                control={
+                  <Checkbox checked={inputs.WebAuthnAuthEnabled === 'true'} onChange={handleInputChange} name="WebAuthnAuthEnabled" />
+                }
               />
             </Grid>
             <Grid xs={12} md={3}>
@@ -525,6 +570,63 @@ const SystemSetting = () => {
             <Grid xs={12}>
               <Button variant="contained" onClick={submitSMTP}>
                 {t('setting_index.systemSettings.configureSMTP.save')}
+              </Button>
+            </Grid>
+          </Grid>
+        </SubCard>
+
+        <SubCard
+          title={t('setting_index.systemSettings.configureGoogleOAuthApp.title')}
+          subTitle={
+            <span>
+              {t('setting_index.systemSettings.configureGoogleOAuthApp.subTitle')}
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
+                {t('setting_index.systemSettings.configureGoogleOAuthApp.manageLink')}
+              </a>
+              {t('setting_index.systemSettings.configureGoogleOAuthApp.manage')}
+            </span>
+          }
+        >
+          <Grid container spacing={{ xs: 3, sm: 2, md: 4 }}>
+            <Grid xs={12}>
+              <Alert severity="info" sx={{ wordWrap: 'break-word' }}>
+                {t('setting_index.systemSettings.configureGoogleOAuthApp.alert1')} <b>{inputs.ServerAddress}</b>
+                {t('setting_index.systemSettings.configureGoogleOAuthApp.alert2')} <b>{`${inputs.ServerAddress}/oauth/google`}</b>
+              </Alert>
+            </Grid>
+            <Grid xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel htmlFor="GoogleClientId">{t('setting_index.systemSettings.configureGoogleOAuthApp.clientId')}</InputLabel>
+                <OutlinedInput
+                  id="GoogleClientId"
+                  name="GoogleClientId"
+                  value={inputs.GoogleClientId || ''}
+                  onChange={handleInputChange}
+                  label={t('setting_index.systemSettings.configureGoogleOAuthApp.clientId')}
+                  placeholder={t('setting_index.systemSettings.configureGoogleOAuthApp.clientIdPlaceholder')}
+                  disabled={loading}
+                />
+              </FormControl>
+            </Grid>
+            <Grid xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel htmlFor="GoogleClientSecret">
+                  {t('setting_index.systemSettings.configureGoogleOAuthApp.clientSecret')}
+                </InputLabel>
+                <OutlinedInput
+                  id="GoogleClientSecret"
+                  name="GoogleClientSecret"
+                  value={inputs.GoogleClientSecret || ''}
+                  onChange={handleInputChange}
+                  label={t('setting_index.systemSettings.configureGoogleOAuthApp.clientSecret')}
+                  placeholder={t('setting_index.systemSettings.configureGoogleOAuthApp.clientSecretPlaceholder')}
+                  disabled={loading}
+                />
+              </FormControl>
+            </Grid>
+            <Grid xs={12}>
+              <Button variant="contained" onClick={submitGoogleOAuth}>
+                {t('setting_index.systemSettings.configureGoogleOAuthApp.saveButton')}
               </Button>
             </Grid>
           </Grid>

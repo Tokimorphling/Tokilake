@@ -8,6 +8,7 @@ import MinimalLayout from 'layout/MinimalLayout';
 // login option 3 routing
 const AuthLogin = Loadable(lazy(() => import('views/Authentication/Auth/Login')));
 const AuthRegister = Loadable(lazy(() => import('views/Authentication/Auth/Register')));
+const GoogleOAuth = Loadable(lazy(() => import('views/Authentication/Auth/GoogleOAuth')));
 const GitHubOAuth = Loadable(lazy(() => import('views/Authentication/Auth/GitHubOAuth')));
 const LarkOAuth = Loadable(lazy(() => import('views/Authentication/Auth/LarkOAuth')));
 const OIDCOAuth = Loadable(lazy(() => import('views/Authentication/Auth/OIDCOAuth')));
@@ -61,6 +62,10 @@ const OtherRoutes = {
     {
       path: '/user/reset',
       element: <ResetPassword />
+    },
+    {
+      path: '/oauth/google',
+      element: <GoogleOAuth />
     },
     {
       path: '/oauth/github',

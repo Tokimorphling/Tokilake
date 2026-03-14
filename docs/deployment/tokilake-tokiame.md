@@ -25,8 +25,11 @@ lastUpdated: true
   - `/v1/images/variations`
   - `/v1/responses`
   - `/v1/rerank`
-
-当前不包含视频任务链路。
+- 支持的视频异步任务接口包括：
+  - `POST /v1/videos`
+  - `GET /v1/videos`
+  - `GET /v1/videos/:id`
+  - `GET /v1/videos/:id/content`
 
 ## 前置条件
 
@@ -150,6 +153,73 @@ curl http://127.0.0.1:3000/v1/chat/completions \
 ```
 
 只要当前请求命中的分组里存在这个模型，Tokilake 就会把请求隧道转发给对应的 Tokiame worker。
+
+## 视频任务调用示例
+
+视频任务接口统一使用 `/v1/videos`，当前支持 `text2video` 和 `image2video`：
+
+```bash
+curl http://127.0.0.1:3000/v1/videos \
+  -H "Authorization: Bearer sk-user-api-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "wanx2.1-t2v",
+    "mode": "text2video",
+    "prompt": "A red sports car driving along a coast road at sunset",
+    "size": "1280x720",
+    "duration": 5,
+    "fps": 24
+  }'
+```
+
+返回结果是一个异步任务对象：
+
+```json
+{
+  "id": "vid_123",
+  "object": "video",
+  "created": 1710000000,
+  "model": "wanx2.1-t2v",
+  "mode": "text2video",
+  "status": "queued",
+  "content_url": "/v1/videos/vid_123/content",
+  "download_url": "/v1/videos/vid_123/content"
+}
+```
+
+随后可以轮询任务状态：
+
+```bash
+curl http://127.0.0.1:3000/v1/videos/vid_123 \
+  -H "Authorization: Bearer sk-user-api-token"
+```
+
+或列出当前用户最近的视频任务：
+
+```bash
+curl "http://127.0.0.1:3000/v1/videos?limit=20&status=processing" \
+  -H "Authorization: Bearer sk-user-api-token"
+```
+
+任务完成后可直接下载内容：
+
+```bash
+curl http://127.0.0.1:3000/v1/videos/vid_123/content \
+  -H "Authorization: Bearer sk-user-api-token" \
+  --output result.mp4
+```
+
+下载接口的返回语义如下：
+
+- 任务未完成时返回 `409 video_not_ready`
+- 任务失败时返回 `502 video_failed`
+- 任务成功时由 Tokilake 通过 Tokiame 隧道代理视频二进制内容
+
+Tokiame 本地后端需要实现以下兼容接口：
+
+- `POST /v1/videos`
+- `GET /v1/videos/{id}`
+- `GET /v1/videos/{id}/content`
 
 ## 常见问题
 

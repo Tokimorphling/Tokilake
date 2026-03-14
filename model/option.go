@@ -1,11 +1,14 @@
 package model
 
 import (
+	"fmt"
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/logger"
 	"strings"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 type Option struct {
@@ -30,11 +33,14 @@ func InitOptionMap() {
 	config.GlobalOption.RegisterBool("PasswordRegisterEnabled", &config.PasswordRegisterEnabled)
 	config.GlobalOption.RegisterBool("EmailVerificationEnabled", &config.EmailVerificationEnabled)
 	config.GlobalOption.RegisterBool("GitHubOAuthEnabled", &config.GitHubOAuthEnabled)
+	config.GlobalOption.RegisterBool("GoogleOAuthEnabled", &config.GoogleOAuthEnabled)
 	config.GlobalOption.RegisterBool("WeChatAuthEnabled", &config.WeChatAuthEnabled)
 	config.GlobalOption.RegisterBool("LarkAuthEnabled", &config.LarkAuthEnabled)
 	config.GlobalOption.RegisterBool("OIDCAuthEnabled", &config.OIDCAuthEnabled)
+	config.GlobalOption.RegisterBool("WebAuthnAuthEnabled", &config.WebAuthnAuthEnabled)
 	config.GlobalOption.RegisterBool("TurnstileCheckEnabled", &config.TurnstileCheckEnabled)
 	config.GlobalOption.RegisterBool("RegisterEnabled", &config.RegisterEnabled)
+	config.GlobalOption.RegisterBool("GoogleOnlyRegisterEnabled", &config.GoogleOnlyRegisterEnabled)
 	config.GlobalOption.RegisterBool("AutomaticDisableChannelEnabled", &config.AutomaticDisableChannelEnabled)
 	config.GlobalOption.RegisterBool("AutomaticEnableChannelEnabled", &config.AutomaticEnableChannelEnabled)
 	config.GlobalOption.RegisterBool("ApproximateTokenEnabled", &config.ApproximateTokenEnabled)
@@ -65,6 +71,8 @@ func InitOptionMap() {
 	config.GlobalOption.RegisterString("ServerAddress", &config.ServerAddress)
 	config.GlobalOption.RegisterString("GitHubClientId", &config.GitHubClientId)
 	config.GlobalOption.RegisterString("GitHubClientSecret", &config.GitHubClientSecret)
+	config.GlobalOption.RegisterString("GoogleClientId", &config.GoogleClientId)
+	config.GlobalOption.RegisterString("GoogleClientSecret", &config.GoogleClientSecret)
 
 	config.GlobalOption.RegisterString("OIDCClientId", &config.OIDCClientId)
 	config.GlobalOption.RegisterString("OIDCClientSecret", &config.OIDCClientSecret)
@@ -129,7 +137,35 @@ func InitOptionMap() {
 		return nil
 	}, "")
 
+	loadOptionsFromConfig()
 	loadOptionsFromDatabase()
+}
+
+func loadOptionsFromConfig() {
+	optionConfigKeys := map[string]string{
+		"ServerAddress":             "server_address",
+		"PasswordLoginEnabled":      "password_login_enabled",
+		"PasswordRegisterEnabled":   "password_register_enabled",
+		"RegisterEnabled":           "register_enabled",
+		"GitHubOAuthEnabled":        "github_oauth_enabled",
+		"GoogleOAuthEnabled":        "google_oauth_enabled",
+		"GoogleOnlyRegisterEnabled": "google_only_register_enabled",
+		"WeChatAuthEnabled":         "wechat_auth_enabled",
+		"LarkAuthEnabled":           "lark_auth_enabled",
+		"OIDCAuthEnabled":           "oidc_auth_enabled",
+		"WebAuthnAuthEnabled":       "webauthn_auth_enabled",
+		"GoogleClientId":            "google_client_id",
+		"GoogleClientSecret":        "google_client_secret",
+	}
+
+	for optionKey, configKey := range optionConfigKeys {
+		if !viper.IsSet(configKey) {
+			continue
+		}
+		if err := config.GlobalOption.Set(optionKey, fmt.Sprint(viper.Get(configKey))); err != nil {
+			logger.SysError("failed to load option from config: " + optionKey + ": " + err.Error())
+		}
+	}
 }
 
 func loadOptionsFromDatabase() {

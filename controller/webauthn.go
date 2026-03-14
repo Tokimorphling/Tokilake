@@ -4,17 +4,33 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"one-api/common/webauthn"
-	"one-api/model"
 	"strconv"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	wauth "github.com/go-webauthn/webauthn/webauthn"
+
+	"one-api/common/config"
+	"one-api/common/webauthn"
+	"one-api/model"
 )
+
+func ensureWebAuthnEnabled(c *gin.Context) bool {
+	if config.WebAuthnAuthEnabled {
+		return true
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "管理员已关闭 WebAuthn",
+		"success": false,
+	})
+	return false
+}
 
 // WebAuthn 注册开始
 func WebauthnBeginRegistration(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	webauthnInstance, err := webauthn.GetWebAuthn()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -73,6 +89,9 @@ func WebauthnBeginRegistration(c *gin.Context) {
 
 // WebAuthn 注册完成
 func WebauthnFinishRegistration(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	webauthnInstance, err := webauthn.GetWebAuthn()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -152,6 +171,9 @@ func WebauthnFinishRegistration(c *gin.Context) {
 
 // WebAuthn 登录开始
 func WebauthnBeginLogin(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	webauthnInstance, err := webauthn.GetWebAuthn()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -236,6 +258,9 @@ func WebauthnBeginLogin(c *gin.Context) {
 
 // WebAuthn 登录完成
 func WebauthnFinishLogin(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	webauthnInstance, err := webauthn.GetWebAuthn()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -368,6 +393,9 @@ func WebauthnFinishLogin(c *gin.Context) {
 
 // 获取用户的WebAuthn凭据列表
 func GetUserWebAuthnCredentials(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	userId := c.GetInt("id")
 
 	var credentials []model.WebAuthnCredential
@@ -392,6 +420,9 @@ func GetUserWebAuthnCredentials(c *gin.Context) {
 
 // 删除WebAuthn凭据
 func DeleteWebAuthnCredential(c *gin.Context) {
+	if !ensureWebAuthnEnabled(c) {
+		return
+	}
 	userId := c.GetInt("id")
 
 	credentialId := c.Param("id")

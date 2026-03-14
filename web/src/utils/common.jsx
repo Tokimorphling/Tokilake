@@ -108,6 +108,31 @@ export async function onGitHubOAuthClicked(github_client_id, openInNewTab = fals
   }
 }
 
+export async function getGoogleEndpoint() {
+  try {
+    const res = await API.get('/api/oauth/google/endpoint');
+    const { success, message, data } = res.data;
+    if (success) {
+      return data;
+    } else {
+      showError(message);
+      return '';
+    }
+  } catch (error) {
+    return '';
+  }
+}
+
+export async function onGoogleOAuthClicked(openInNewTab = false) {
+  const url = await getGoogleEndpoint();
+  if (!url) return;
+  if (openInNewTab) {
+    window.open(url);
+  } else {
+    window.location.href = url;
+  }
+}
+
 export async function getOIDCEndpoint() {
   try {
     const res = await API.get('/api/oauth/endpoint');
@@ -537,6 +562,16 @@ export function renderQuotaByMoney(money) {
   const result = new Decimal(money).mul(quotaPerUnit);
 
   return result.toFixed(0);
+}
+
+export function getLocalizedGroupName(groupKey, groupMap, t) {
+  if (!groupKey) {
+    return '';
+  }
+  if (groupKey === 'default') {
+    return t('defaultGroup');
+  }
+  return groupMap?.[groupKey]?.name || groupKey;
 }
 
 export const verifyJSON = (str) => {

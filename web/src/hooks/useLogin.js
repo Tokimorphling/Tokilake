@@ -52,6 +52,28 @@ const useLogin = () => {
     }
   };
 
+  const googleLogin = async (code, state) => {
+    try {
+      const affCode = localStorage.getItem('aff');
+      const res = await API.get(`/api/oauth/google?code=${code}&state=${state}&aff=${affCode}`);
+      const { success, message } = res.data;
+      if (success) {
+        if (message === 'bind') {
+          showSuccess(t('common.bindOk'));
+          navigate('/panel');
+        } else {
+          loadUser();
+          loadUserGroup();
+          showSuccess(t('common.loginOk'));
+          navigate('/panel');
+        }
+      }
+      return { success, message };
+    } catch (err) {
+      return { success: false, message: '' };
+    }
+  };
+
   const oidcLogin = async (code, state) => {
     try {
       const affCode = localStorage.getItem('aff');
@@ -149,9 +171,9 @@ const useLogin = () => {
       console.error(error);
     }
     return [];
-  }, []);
+  }, [dispatch]);
 
-  return { login, logout, githubLogin, wechatLogin, larkLogin, oidcLogin, loadUser, loadUserGroup };
+  return { login, logout, githubLogin, googleLogin, wechatLogin, larkLogin, oidcLogin, loadUser, loadUserGroup };
 };
 
 export default useLogin;

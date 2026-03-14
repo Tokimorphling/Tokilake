@@ -59,6 +59,22 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "GoogleOAuthEnabled":
+		if option.Value == "true" && (config.GoogleClientId == "" || config.GoogleClientSecret == "") {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "无法启用 Google OAuth，请先填入 Google Client ID 以及 Google Client Secret！",
+			})
+			return
+		}
+	case "GoogleOnlyRegisterEnabled":
+		if option.Value == "true" && (!config.GoogleOAuthEnabled || config.GoogleClientId == "" || config.GoogleClientSecret == "") {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "无法启用仅 Google 注册，请先启用 Google OAuth 并填入 Google 配置信息！",
+			})
+			return
+		}
 	case "OIDCAuthEnabled":
 		if option.Value == "true" && (config.OIDCClientId == "" || config.OIDCClientSecret == "" || config.OIDCIssuer == "" || config.OIDCScopes == "" || config.OIDCUsernameClaims == "") {
 			c.JSON(http.StatusOK, gin.H{

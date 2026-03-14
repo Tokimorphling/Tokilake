@@ -215,7 +215,7 @@ func updateKlingTaskAll(ctx context.Context, channelId int, taskIds []string, ta
 			}
 		}
 
-		if responseItem.Status == model.TaskStatusSuccess {
+		if responseItem.Status == string(model.TaskStatusSuccess) {
 			task.Progress = 100
 		}
 

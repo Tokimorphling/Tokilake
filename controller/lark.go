@@ -191,7 +191,7 @@ func LarkOAuth(c *gin.Context) {
 			return
 		}
 	} else {
-		if config.RegisterEnabled {
+		if err := validateNewUserRegistration("lark"); err == nil {
 			user.Username = "lark_" + strconv.Itoa(model.GetMaxUserId()+1)
 			if larkUser.Data.Name != "" {
 				user.DisplayName = larkUser.Data.Name
@@ -211,7 +211,7 @@ func LarkOAuth(c *gin.Context) {
 		} else {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "管理员关闭了新用户注册",
+				"message": err.Error(),
 			})
 			return
 		}

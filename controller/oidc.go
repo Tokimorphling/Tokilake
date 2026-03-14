@@ -188,10 +188,10 @@ func OIDCAuth(c *gin.Context) {
 	}
 
 	// 注册新用户
-	if !config.RegisterEnabled {
+	if err := validateNewUserRegistration("oidc"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": "管理员关闭了新用户注册",
+			"message": err.Error(),
 		})
 		return
 	}

@@ -13,6 +13,7 @@ const icons = {
   IconBrandPaypal: () => <Icon width={20} icon="solar:wallet-money-bold-duotone" />,
   IconCoins: () => <Icon width={20} icon="solar:hand-money-bold-duotone" />,
   IconUsers: () => <Icon width={20} icon="solar:users-group-rounded-bold-duotone" />,
+  IconUsersGroup: () => <Icon width={20} icon="solar:users-group-two-rounded-bold-duotone" />,
   IconUsersPlus: () => <Icon width={20} icon="solar:users-group-two-rounded-bold-duotone" />,
   IconModel: () => <Icon width={20} icon="mingcute:ai-fill" />,
   IconInfo: () => <Icon width={20} icon="solar:info-circle-bold-duotone" />
@@ -25,7 +26,7 @@ const Setting = {
   children: [
     {
       id: 'user',
-      title: '用户',
+      title: 'user',
       type: 'item',
       url: '/panel/user',
       icon: icons.IconUser,
@@ -34,7 +35,7 @@ const Setting = {
     },
     {
       id: 'channel',
-      title: '渠道',
+      title: 'channel',
       type: 'item',
       url: '/panel/channel',
       icon: icons.IconSitemap,
@@ -43,14 +44,14 @@ const Setting = {
     },
     {
       id: 'operation',
-      title: '运营',
+      title: 'operation',
       type: 'collapse',
       icon: icons.IconBasket,
       isAdmin: true,
       children: [
         {
           id: 'user_group',
-          title: '用户分组',
+          title: 'user_group',
           type: 'item',
           url: '/panel/user_group',
           icon: icons.IconUsers,
@@ -59,7 +60,7 @@ const Setting = {
         },
         {
           id: 'pricing',
-          title: '模型价格',
+          title: 'pricing',
           type: 'item',
           url: '/panel/pricing',
           icon: icons.IconReceipt2,
@@ -68,7 +69,7 @@ const Setting = {
         },
         {
           id: 'model_ownedby',
-          title: '模型归属',
+          title: 'modelOwnedby.title',
           type: 'item',
           url: '/panel/model_ownedby',
           icon: icons.IconModel,
@@ -77,7 +78,7 @@ const Setting = {
         },
         {
           id: 'model_info',
-          title: '模型详情',
+          title: 'modelInfo.modelInfo',
           type: 'item',
           url: '/panel/model_info',
           icon: icons.IconInfo,
@@ -97,14 +98,14 @@ const Setting = {
     },
     {
       id: 'paySetting',
-      title: '支付设置',
+      title: 'paySetting',
       type: 'collapse',
       icon: icons.IconBrandPaypal,
       isAdmin: true,
       children: [
         {
           id: 'redemption',
-          title: '兑换',
+          title: 'redemption',
           type: 'item',
           url: '/panel/redemption',
           icon: icons.IconCoin,
@@ -113,7 +114,7 @@ const Setting = {
         },
         {
           id: 'payment',
-          title: '支付',
+          title: 'payment',
           type: 'item',
           url: '/panel/payment',
           icon: icons.IconBrandPaypal,
@@ -125,24 +126,24 @@ const Setting = {
 
     {
       id: 'token',
-      title: '令牌',
+      title: 'token',
       type: 'item',
       url: '/panel/token',
       icon: icons.IconKey,
       breadcrumbs: false
     },
     {
-      id: '私有分组',
-      title: '私有分组',
+      id: 'private_group',
+      title: 'private_group',
       type: 'item',
       url: '/panel/private-groups',
-      icon: icons.IconUsersPlus,
+      icon: icons.IconUsersGroup,
       breadcrumbs: false
     },
 
     {
       id: 'profile',
-      title: '个人设置',
+      title: 'profile',
       type: 'item',
       url: '/panel/profile',
       icon: icons.IconUserScan,
@@ -152,7 +153,7 @@ const Setting = {
 
     {
       id: 'setting',
-      title: '设置',
+      title: 'setting',
       type: 'item',
       url: '/panel/setting',
       icon: icons.IconSettingsCog,

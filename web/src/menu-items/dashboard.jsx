@@ -10,7 +10,7 @@ const icons = {
 
 const dashboard = {
   id: 'dashboard',
-  title: 'Dashboard',
+  title: 'dashboard',
   type: 'group',
   children: [
     {
@@ -33,7 +33,7 @@ const dashboard = {
     },
     {
       id: 'multi_user_stats',
-      title: 'multi_user_stats',
+      title: 'multi_user_stats.title',
       type: 'item',
       url: '/panel/multi_user_stats',
       icon: icons.IconList,

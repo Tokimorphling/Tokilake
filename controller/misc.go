@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/stmp"
 	"one-api/common/telegram"
 	"one-api/model"
-	"strings"
-
-	"github.com/gin-gonic/gin"
 )
 
 func GetStatus(c *gin.Context) {
@@ -23,41 +24,47 @@ func GetStatus(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"version":             config.Version,
-			"start_time":          config.StartTime,
-			"email_verification":  config.EmailVerificationEnabled,
-			"github_oauth":        config.GitHubOAuthEnabled,
-			"github_client_id":    config.GitHubClientId,
-			"oidc_auth":           config.OIDCAuthEnabled,
-			"lark_login":          config.LarkAuthEnabled,
-			"lark_client_id":      config.LarkClientId,
-			"system_name":         config.SystemName,
-			"logo":                config.Logo,
-			"language":            config.Language,
-			"footer_html":         config.Footer,
-			"analytics_code":      config.AnalyticsCode,
-			"wechat_qrcode":       config.WeChatAccountQRCodeImageURL,
-			"wechat_login":        config.WeChatAuthEnabled,
-			"server_address":      config.ServerAddress,
-			"turnstile_check":     config.TurnstileCheckEnabled,
-			"turnstile_site_key":  config.TurnstileSiteKey,
-			"top_up_link":         config.TopUpLink,
-			"chat_link":           config.ChatLink,
-			"quota_per_unit":      config.QuotaPerUnit,
-			"display_in_currency": config.DisplayInCurrencyEnabled,
-			"telegram_bot":        telegramBot,
-			"mj_notify_enabled":   config.MjNotifyEnabled,
-			"chat_links":          config.ChatLinks,
-			"PaymentUSDRate":      config.PaymentUSDRate,
-			"PaymentMinAmount":    config.PaymentMinAmount,
-			"RechargeDiscount":    config.RechargeDiscount,
-			"EnableSafe":          config.EnableSafe,
-			"SafeToolName":        config.SafeToolName,
-			"SafeKeyWords":        config.SafeKeyWords,
-			"UserInvoiceMonth":    config.UserInvoiceMonth,
-			"UptimeDomain":        config.UPTIMEKUMA_DOMAIN,
-			"UptimePageName":      config.UPTIMEKUMA_STATUS_PAGE_NAME,
-			"UptimeEnabled":       config.UPTIMEKUMA_ENABLE,
+			"version":              config.Version,
+			"start_time":           config.StartTime,
+			"password_login":       config.PasswordLoginEnabled,
+			"password_register":    config.PasswordRegisterEnabled,
+			"register_enabled":     config.RegisterEnabled,
+			"email_verification":   config.EmailVerificationEnabled,
+			"github_oauth":         config.GitHubOAuthEnabled,
+			"google_oauth":         config.GoogleOAuthEnabled,
+			"google_only_register": config.GoogleOnlyRegisterEnabled,
+			"github_client_id":     config.GitHubClientId,
+			"oidc_auth":            config.OIDCAuthEnabled,
+			"webauthn_auth":        config.WebAuthnAuthEnabled,
+			"lark_login":           config.LarkAuthEnabled,
+			"lark_client_id":       config.LarkClientId,
+			"system_name":          config.SystemName,
+			"logo":                 config.Logo,
+			"language":             config.Language,
+			"footer_html":          config.Footer,
+			"analytics_code":       config.AnalyticsCode,
+			"wechat_qrcode":        config.WeChatAccountQRCodeImageURL,
+			"wechat_login":         config.WeChatAuthEnabled,
+			"server_address":       config.ServerAddress,
+			"turnstile_check":      config.TurnstileCheckEnabled,
+			"turnstile_site_key":   config.TurnstileSiteKey,
+			"top_up_link":          config.TopUpLink,
+			"chat_link":            config.ChatLink,
+			"quota_per_unit":       config.QuotaPerUnit,
+			"display_in_currency":  config.DisplayInCurrencyEnabled,
+			"telegram_bot":         telegramBot,
+			"mj_notify_enabled":    config.MjNotifyEnabled,
+			"chat_links":           config.ChatLinks,
+			"PaymentUSDRate":       config.PaymentUSDRate,
+			"PaymentMinAmount":     config.PaymentMinAmount,
+			"RechargeDiscount":     config.RechargeDiscount,
+			"EnableSafe":           config.EnableSafe,
+			"SafeToolName":         config.SafeToolName,
+			"SafeKeyWords":         config.SafeKeyWords,
+			"UserInvoiceMonth":     config.UserInvoiceMonth,
+			"UptimeDomain":         config.UPTIMEKUMA_DOMAIN,
+			"UptimePageName":       config.UPTIMEKUMA_STATUS_PAGE_NAME,
+			"UptimeEnabled":        config.UPTIMEKUMA_ENABLE,
 		},
 	})
 }
@@ -87,6 +94,27 @@ func GetHomePageContent(c *gin.Context) {
 }
 
 func SendEmailVerification(c *gin.Context) {
+	if !config.RegisterEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "管理员关闭了新用户注册",
+		})
+		return
+	}
+	if config.GoogleOnlyRegisterEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": googleOnlyRegisterMessage,
+		})
+		return
+	}
+	if !config.PasswordRegisterEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "管理员关闭了通过密码进行注册",
+		})
+		return
+	}
 	email := c.Query("email")
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -135,6 +163,13 @@ func SendEmailVerification(c *gin.Context) {
 }
 
 func SendPasswordResetEmail(c *gin.Context) {
+	if !config.PasswordLoginEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "管理员关闭了密码登录",
+		})
+		return
+	}
 	email := c.Query("email")
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -185,6 +220,13 @@ type PasswordResetRequest struct {
 }
 
 func ResetPassword(c *gin.Context) {
+	if !config.PasswordLoginEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "管理员关闭了密码登录",
+		})
+		return
+	}
 	var req PasswordResetRequest
 	err := json.NewDecoder(c.Request.Body).Decode(&req)
 	if err != nil {

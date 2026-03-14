@@ -46,6 +46,7 @@ import {
   showError,
   showSuccess,
   onGitHubOAuthClicked,
+  onGoogleOAuthClicked,
   copy,
   trims,
   onLarkOAuthClicked,
@@ -57,6 +58,7 @@ import * as Yup from 'yup';
 import WechatModal from 'views/Authentication/AuthForms/WechatModal';
 import { useSelector } from 'react-redux';
 import EmailModal from './component/EmailModal';
+import GoogleIcon from 'assets/images/icons/social-google.svg';
 import LarkIcon from 'assets/images/icons/lark.svg';
 import { useTheme } from '@mui/material/styles';
 
@@ -105,6 +107,9 @@ export default function Profile() {
   const theme = useTheme();
   const matchDownSM = useMediaQuery(theme.breakpoints.down('md'));
   const [value, setValue] = useState(0);
+  const webAuthnEnabled = Boolean(status?.webauthn_auth);
+  const webAuthnTabIndex = 2;
+  const tokenTabIndex = webAuthnEnabled ? 3 : 2;
 
   const handleChange = (event, newValue) => {
     setValue(newValue);
@@ -295,7 +300,11 @@ export default function Profile() {
     }
     loadUser().then();
     loadUserGroup().then();
-    loadWebAuthnCredentials().then();
+    if (status?.webauthn_auth) {
+      loadWebAuthnCredentials().then();
+    } else {
+      setWebAuthnCredentials([]);
+    }
   }, [status]);
 
   const getGroupInfo = () => {
@@ -313,8 +322,10 @@ export default function Profile() {
           <Tabs value={value} onChange={handleChange} aria-label="profile tabs" variant="scrollable" scrollButtons="auto">
             <Tab icon={<IconSettings />} iconPosition="start" label={t('profilePage.general')} {...a11yProps(0)} />
             <Tab icon={<IconLink />} iconPosition="start" label={t('profilePage.binding')} {...a11yProps(1)} />
-            <Tab icon={<IconShieldLock />} iconPosition="start" label={t('profilePage.webauthn')} {...a11yProps(2)} />
-            <Tab icon={<IconKey />} iconPosition="start" label={t('profilePage.token')} {...a11yProps(3)} />
+            {webAuthnEnabled && (
+              <Tab icon={<IconShieldLock />} iconPosition="start" label={t('profilePage.webauthn')} {...a11yProps(webAuthnTabIndex)} />
+            )}
+            <Tab icon={<IconKey />} iconPosition="start" label={t('profilePage.token')} {...a11yProps(tokenTabIndex)} />
           </Tabs>
         </Box>
         <CustomTabPanel value={value} index={0}>
@@ -545,6 +556,46 @@ export default function Profile() {
                     ))}
                 </ListItem>
               )}
+              {status.google_oauth && (
+                <ListItem divider>
+                  <ListItemAvatar>
+                    <Avatar src={GoogleIcon} sx={{ bgcolor: 'transparent' }} />
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      matchDownSM ? (
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body1">{t('profilePage.google')}</Typography>
+                          {inputs.google_id ? (
+                            <Button size="small" variant="outlined" color="error" onClick={() => handleUnbind('google')}>
+                              {t('profilePage.unbind')}
+                            </Button>
+                          ) : (
+                            <Button size="small" variant="outlined" onClick={() => onGoogleOAuthClicked(true)}>
+                              {t('profilePage.bind')}
+                            </Button>
+                          )}
+                        </Box>
+                      ) : (
+                        t('profilePage.google')
+                      )
+                    }
+                    secondary={inputs.google_id ? `${t('profilePage.bound')}: ${inputs.google_id}` : t('profilePage.unbound')}
+                    secondaryTypographyProps={matchDownSM ? {} : { noWrap: true }}
+                    sx={matchDownSM ? {} : { minWidth: 0, mr: 2 }}
+                  />
+                  {!matchDownSM &&
+                    (inputs.google_id ? (
+                      <Button variant="outlined" color="error" onClick={() => handleUnbind('google')} sx={{ ml: 2 }}>
+                        {t('profilePage.unbind')}
+                      </Button>
+                    ) : (
+                      <Button variant="outlined" onClick={() => onGoogleOAuthClicked(true)} sx={{ ml: 2 }}>
+                        {t('profilePage.bind')}
+                      </Button>
+                    ))}
+                </ListItem>
+              )}
               {status.lark_client_id && (
                 <ListItem divider>
                   <ListItemAvatar>
@@ -643,74 +694,76 @@ export default function Profile() {
             )}
           </SubCard>
         </CustomTabPanel>
-        <CustomTabPanel value={value} index={2}>
-          <SubCard title={t('profilePage.webauthnManagement')}>
-            <Grid container spacing={2}>
-              <Grid xs={12}>
-                <Alert severity="info">{t('profilePage.webauthnDescription')}</Alert>
-              </Grid>
-              <Grid xs={12}>
-                <Button variant="contained" onClick={handleWebAuthnRegister} disabled={loadingWebAuthn}>
-                  {t('profilePage.registerWebauthn')}
-                </Button>
-              </Grid>
-              {webAuthnCredentials.length > 0 && (
+        {webAuthnEnabled && (
+          <CustomTabPanel value={value} index={webAuthnTabIndex}>
+            <SubCard title={t('profilePage.webauthnManagement')}>
+              <Grid container spacing={2}>
                 <Grid xs={12}>
-                  <Typography variant="h4" sx={{ mb: 2 }}>
-                    {t('profilePage.registeredCredentials')}
-                  </Typography>
-                  {webAuthnCredentials.map((credential) => (
-                    <Card
-                      key={credential.id}
-                      sx={{
-                        mb: 2,
-                        p: 2,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <Stack>
-                        <Typography variant="body1">
-                          {t('profilePage.alias')}{' '}
-                          {credential.alias && credential.alias.trim() !== ''
-                            ? credential.alias
-                            : new Date(credential.created_time * 1000).toLocaleString()}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {t('profilePage.credentialId')}{' '}
-                          <span title={credential.credential_id}>
-                            {credential.credential_id.length > 20
-                              ? credential.credential_id.substring(0, 20) + '...'
-                              : credential.credential_id}
-                          </span>
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {t('profilePage.registerTime')} {new Date(credential.created_time * 1000).toLocaleString()}
-                        </Typography>
-                      </Stack>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        onClick={() => handleDeleteWebAuthnCredential(credential.id)}
-                        disabled={loadingWebAuthn}
+                  <Alert severity="info">{t('profilePage.webauthnDescription')}</Alert>
+                </Grid>
+                <Grid xs={12}>
+                  <Button variant="contained" onClick={handleWebAuthnRegister} disabled={loadingWebAuthn}>
+                    {t('profilePage.registerWebauthn')}
+                  </Button>
+                </Grid>
+                {webAuthnCredentials.length > 0 && (
+                  <Grid xs={12}>
+                    <Typography variant="h4" sx={{ mb: 2 }}>
+                      {t('profilePage.registeredCredentials')}
+                    </Typography>
+                    {webAuthnCredentials.map((credential) => (
+                      <Card
+                        key={credential.id}
+                        sx={{
+                          mb: 2,
+                          p: 2,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}
                       >
-                        {t('profilePage.delete')}
-                      </Button>
-                    </Card>
-                  ))}
-                </Grid>
-              )}
-              {webAuthnCredentials.length === 0 && !loadingWebAuthn && (
-                <Grid xs={12}>
-                  <Alert severity="info">{t('profilePage.noWebauthnCredentials')}</Alert>
-                </Grid>
-              )}
-            </Grid>
-          </SubCard>
-        </CustomTabPanel>
-        <CustomTabPanel value={value} index={3}>
+                        <Stack>
+                          <Typography variant="body1">
+                            {t('profilePage.alias')}{' '}
+                            {credential.alias && credential.alias.trim() !== ''
+                              ? credential.alias
+                              : new Date(credential.created_time * 1000).toLocaleString()}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('profilePage.credentialId')}{' '}
+                            <span title={credential.credential_id}>
+                              {credential.credential_id.length > 20
+                                ? credential.credential_id.substring(0, 20) + '...'
+                                : credential.credential_id}
+                            </span>
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {t('profilePage.registerTime')} {new Date(credential.created_time * 1000).toLocaleString()}
+                          </Typography>
+                        </Stack>
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          onClick={() => handleDeleteWebAuthnCredential(credential.id)}
+                          disabled={loadingWebAuthn}
+                        >
+                          {t('profilePage.delete')}
+                        </Button>
+                      </Card>
+                    ))}
+                  </Grid>
+                )}
+                {webAuthnCredentials.length === 0 && !loadingWebAuthn && (
+                  <Grid xs={12}>
+                    <Alert severity="info">{t('profilePage.noWebauthnCredentials')}</Alert>
+                  </Grid>
+                )}
+              </Grid>
+            </SubCard>
+          </CustomTabPanel>
+        )}
+        <CustomTabPanel value={value} index={tokenTabIndex}>
           <SubCard title={t('profilePage.token')}>
             <Grid container spacing={2}>
               <Grid xs={12}>

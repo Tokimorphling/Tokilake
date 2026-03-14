@@ -40,11 +40,14 @@ var PasswordLoginEnabled = true
 var PasswordRegisterEnabled = true
 var EmailVerificationEnabled = false
 var GitHubOAuthEnabled = false
+var GoogleOAuthEnabled = false
 var WeChatAuthEnabled = false
 var LarkAuthEnabled = false
 var TurnstileCheckEnabled = false
 var RegisterEnabled = true
+var GoogleOnlyRegisterEnabled = false
 var OIDCAuthEnabled = false
+var WebAuthnAuthEnabled = true
 
 // 是否开启内容审查
 var EnableSafe = false
@@ -157,6 +160,8 @@ var GitHubProxy = ""
 var GitHubClientId = ""
 var GitHubClientSecret = ""
 var GitHubOldIdCloseEnabled = false
+var GoogleClientId = ""
+var GoogleClientSecret = ""
 
 var LarkClientId = ""
 var LarkClientSecret = ""
@@ -327,6 +332,7 @@ const (
 	RelayModeChatRealtime
 	RelayModeKling
 	RelayModeResponses
+	RelayModeVideos
 )
 
 type ContextKey string

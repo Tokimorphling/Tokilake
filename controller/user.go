@@ -133,6 +133,13 @@ func Register(c *gin.Context) {
 		})
 		return
 	}
+	if config.GoogleOnlyRegisterEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"message": googleOnlyRegisterMessage,
+			"success": false,
+		})
+		return
+	}
 	if !config.PasswordRegisterEnabled {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "管理员关闭了通过密码进行注册，请使用第三方账户验证的形式进行注册",
@@ -856,6 +863,8 @@ func Unbind(c *gin.Context) {
 	}
 	updates := make(map[string]interface{})
 	switch req.Type {
+	case "google":
+		updates["google_id"] = ""
 	case "github":
 		updates["github_id"] = ""
 		updates["github_id_new"] = nil
