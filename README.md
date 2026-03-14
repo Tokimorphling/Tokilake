@@ -2,133 +2,53 @@
    <strong>中文</strong> | <a href="./README.en.md">English</a>
 </p>
 
-<p align="center">
-   <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/MartialBE/one-hub/assets/42402987/c4125d1a-5577-446d-ba15-2a71c52140c1">
-   <img height="90" src="https://raw.githubusercontent.com/MartialBE/one-api/main/web/src/assets/images/logo.svg">
-   </picture>
-</p>
+# Tokilake & Tokiame
 
-<div align="center">
+> **Control your own GPUs like OpenRouter.**
 
-# Tokilake
+Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关。它彻底翻转了传统的 API 网关模型：不再局限于网关主动请求有公网 IP 的服务器，而是**允许任意位于 NAT/内网之后的 GPU 工作节点（Tokiame）通过 WebSocket 反向隧道主动接入中心网关（Hub）**。
 
-_本项目是基于[one-api](https://github.com/songquanpeng/one-api)二次开发而来的_
+> **Tokilake** 基于 [MartialBE/one-hub](https://github.com/MartialBE/one-hub) 以及后续的 One-API 生态分支持续演进而来。
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/MartialBE/one-api/main/LICENSE">
-    <img src="https://img.shields.io/github/license/MartialBE/one-api?color=brightgreen" alt="license">
-  </a>
-  <a href="https://github.com/MartialBE/one-hub/releases/latest">
-    <img src="https://img.shields.io/github/v/release/MartialBE/one-api?color=brightgreen&include_prereleases" alt="release">
-  </a>
-  <a href="https://github.com/users/MartialBE/packages/container/package/one-api">
-    <img src="https://img.shields.io/badge/docker-ghcr.io-blue" alt="docker">
-  </a>
-  <a href="https://hub.docker.com/r/martialbe/one-api">
-    <img src="https://img.shields.io/badge/docker-dockerHub-blue" alt="docker">
-  </a>
-  <a href="https://goreportcard.com/report/github.com/MartialBE/one-api">
-    <img src="https://goreportcard.com/badge/github.com/MartialBE/one-api" alt="GoReportCard">
-  </a>
-</p>
+## 🌟 核心理念
 
-**请不要和原版混用，因为新增功能，数据库与原版不兼容**
+传统的 API 代理通常作为 Client，将请求路由到拥有公网 IP 地址的 Server。如果你的高算力显卡（如 RTX 4090）躺在家里的局域网内，或者散布在不同云厂商的临时竞价实例（Spot Instances）上，将其统一成稳定可用的 API 极具挑战。
 
-**为了更加简洁，本项目之后，除了新增供应商时会更新程序自带的模型列表，平常不再更新程序自带的模型列表。**
+**Tokiame** 改变了这一切。它作为一个轻量级守护进程，主动“拨号”连接到云端的 **Tokilake** 网关。连接成功后，Tokilake 会在系统内部将其无缝映射为一个标准的 `Channel`（渠道）。这意味着，**你无需任何内网穿透工具（如 FRP/Ngrok），就可以享受网关自带的企业级负载均衡、高并发削峰、鉴权与计费链路。**
 
-**如果发现缺少新模型，请在`后台-模型价格-更新价格`中更新新增的模型**
+## 🚀 完美适配的场景
 
-[演示网站](https://one-hub.xiao5.info/)
-[文档](https://one-hub-doc.vercel.app/)
+### 1. 个人与工作室的分布式 GPU 池化（穿透 NAT）
+针对只有内网 IP 的家庭宽带或校园网环境。只需在本地运行 Tokiame 进程，立刻与云端网关打通隧道。你本地使用 Ollama / vLLM 部署的大语言模型，瞬间即可安全地对外提供标准的 OpenAI API 服务。
 
-</div>
+### 2. 跨云/多节点混合部署 (Hybrid Cloud Orchestration)
+在不同算力平台（如 AWS, 阿里云, AutoDL, RunPod）购买了零散的 GPU 实例？不需要复杂的 SD-WAN 组网。新开实例只需附带启动 Tokiame，它便会自动注册进负载池；实例被销毁或关机时，心跳机制会自动将该节点安全下线，极大降低了运维成本。
 
-> [!WARNING]
-> 本项目为个人学习使用，不保证稳定性，且不提供任何技术支持，使用者必须在遵循 OpenAI 的使用条款以及法律法规的情况下使用，不得用于非法用途。  
-> 根据[《生成式人工智能服务管理暂行办法》](http://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm)的要求，请勿对中国地区公众提供一切未经备案的生成式人工智能服务。
+### 3. 企业级数据隐私与“自带模型” (BYOM)
+SaaS 服务商提供业务端，客户提供算力端。客户只需在自己绝对安全的私有机房内部署 Tokiame，单向连接到 SaaS 的网关。客户机房**不暴露任何入站（Inbound）端口**，即可完成业务对私有大模型的调度调用，满足极其严苛的安全审计要求。
 
-## 功能变化
+### 4. 社区算力互助与 C2C 算力交易
+基于内置的 **私有分组 (Private Group)** 和 **邀请码 (Invite Code)** 机制。用户 A 接入自己的算力节点，并生成一枚邀请码；用户 B 兑换邀请码后即可进入 A 的私有多租户环境调用算力，网关负责统一计费与鉴权，轻松搭建起你自己的 "OpenRouter"。
 
-- 全新的 UI 界面
-- 新增用户仪表盘
-- 新增管理员分析数据统计界面
-- 重构了中转`供应商`模块
-- 支持使用`Azure Speech`模拟`TTS`功能
-- 渠道可配置单独的 http/socks5 代理
-- 支持动态返回用户模型列表
-- 支持自定义测速模型
-- 日志增加请求耗时
-- 支持和优化非 OpenAI 模型的函数调用（支持的模型可以在 lobe-chat 直接使用）
-- 支持完成倍率自定义
-- 支持完整的分页和排序
-- 支持`Telegram bot`
-- 支持模型按次收费
-- 支持模型通配符
-- 支持使用配置文件启动程序
-- 支持模型价格更新
-- 支持自动获取供应商模型
-- 支持仅聊天，开启后如果有传入`function call`参数会跳过该渠道
-- 支持支付
-- 支持配置用户组 RPM
-- 支持`Prometheus`监控
-- 支持`Uptime Kuma`状态监控(通过环境变量或者配置文件开启)
-- 支持用户分组自动升级
-- 支持用户月度账单生成(通过环境变量或者配置文件开启)
-- 支持多策略(`覆盖更新`,`只更新现有价格`,`只新增价格`)模型价格自动更新(通过环境变量或者配置文件开启）
-- 支持`Gemini`、`Claude`格式API请求（详见[文档](https://one-hub-doc.vercel.app/)）
-- 支持`Webauthn`登录（前往`个人设置`页面注册Webauthn登陆凭证即可）
+## 🛠 架构设计
 
-## 当前支持的供应商
+- **`Tokilake` (网关/Hub级别)**: 统一的流量入口。接收用户的标准 HTTP API 请求，并将其多路复用到对应的边缘节点。
+- **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 `xtaci/smux` 多路复用协议维持极低延迟的 WebSocket 反向隧道。
 
-| 供应商                                                                | Chat                     | Embeddings | Audio  | Images      | 其他                                                             |
-| --------------------------------------------------------------------- | ------------------------ | ---------- | ------ | ----------- | ---------------------------------------------------------------- |
-| [OpenAI](https://platform.openai.com/docs/api-reference/introduction) | ✅                       | ✅         | ✅     | ✅          | -                                                                |
-| [Azure OpenAI](https://oai.azure.com/)                                | ✅                       | ✅         | ✅     | ✅          | -                                                                |
-| [Azure Speech](https://portal.azure.com/)                             | -                        | -          | ⚠️ tts | -           | -                                                                |
-| [Anthropic](https://www.anthropic.com/)                               | ✅                       | -          | -      | -           | -                                                                |
-| [Gemini](https://aistudio.google.com/)                                | ✅                       | -          | -      | -           | -                                                                |
-| [百度文心](https://console.bce.baidu.com/qianfan/overview)            | ✅                       | ✅         | -      | -           | -                                                                |
-| [通义千问](https://dashscope.console.aliyun.com/overview)             | ✅                       | ✅         | -      | -           | -                                                                |
-| [讯飞星火](https://console.xfyun.cn/)                                 | ✅                       | -          | -      | -           | -                                                                |
-| [智谱](https://open.bigmodel.cn/overview)                             | ✅                       | ✅         | -      | ⚠️ 图片生成 | -                                                                |
-| [腾讯混元](https://cloud.tencent.com/product/hunyuan)                 | ✅                       | -          | -      | -           | -                                                                |
-| [百川](https://platform.baichuan-ai.com/console/apikey)               | ✅                       | ✅         | -      | -           | -                                                                |
-| [MiniMax](https://www.minimaxi.com/user-center/basic-information)     | ✅                       | ✅         | -      | -           | -                                                                |
-| [Deepseek](https://platform.deepseek.com/usage)                       | ✅                       | -          | -      | -           | -                                                                |
-| [Moonshot](https://moonshot.ai/)                                      | ✅                       | -          | -      | -           | -                                                                |
-| [Mistral](https://mistral.ai/)                                        | ✅                       | ✅         | -      | -           | -                                                                |
-| [Groq](https://console.groq.com/keys)                                 | ✅                       | -          | -      | -           | -                                                                |
-| [Amazon Bedrock](https://console.aws.amazon.com/bedrock/home)         | ⚠️ 仅支持 Anthropic 模型 | -          | -      | -           | -                                                                |
-| [零一万物](https://platform.lingyiwanwu.com/details)                  | ✅                       | -          | -      | -           | -                                                                |
-| [Cloudflare AI](https://ai.cloudflare.com/)                           | ✅                       | -          | ⚠️ stt | ⚠️ 图片生成 | -                                                                |
-| [Midjourney](https://www.midjourney.com/)                             | -                        | -          | -      | -           | [midjourney-proxy](https://github.com/novicezk/midjourney-proxy) |
-| [Cohere](https://cohere.com/)                                         | ✅                       | -          | -      | -           | -                                                                |
-| [Stability AI](https://platform.stability.ai/account/credits)         | -                        | -          | -      | ⚠️ 图片生成 | -                                                                |
-| [Coze](https://www.coze.com/open/docs/chat?_lang=zh)                  | ✅                       | -          | -      | -           | -                                                                |
-| [Ollama](https://github.com/ollama/ollama)                            | ✅                       | ✅         | -      | -           | -                                                                |
-| [Suno](https://suno.com/)                                             | -                        | -          | -      | -           | [Suno-API](https://github.com/Suno-API/Suno-API)                 |
+### 简明工作流
+1. `Tokiame` 客户端使用标准的用户 API 令牌向 `Tokilake` 发起 WebSocket 连接请求。
+2. 网关验证通过后，自动在数据库中为其生成/绑定一个 `type=100` 的虚拟 `Channel`，并划入特定的私有分组。
+3. 当用户通过网关发起大模型 HTTP 请求，网关就像处理普通渠道一样，将其透明地通过 `smux` 隧道流式推送给边缘层节点处理。
+4. 基于实时的心跳保活。一旦边缘节点断网离线，网关将其虚拟 Channel 自动禁用摘流，实现零感知的故障转移 (Failover)。
 
-## 感谢
+## 致谢
 
-- 本程序使用了以下开源项目
-  - [one-api](https://github.com/songquanpeng/one-api)为本项目的基础
-  - [Berry Free React Admin Template](https://github.com/codedthemes/berry-free-react-admin-template)为本项目的前端界面
-  - [minimal-ui-kit](https://github.com/minimal-ui-kit/material-kit-react),使用了其中的部分样式
-  - [new api](https://github.com/Calcium-Ion/new-api)，Midjourney/Suno 模块的代码来源于此
-  - [go-zero](https://github.com/zeromicro/go-zero) - Token 限流器的实现
+- [songquanpeng/one-api](https://github.com/songquanpeng/one-api): 本项目的基础架构来源。
+- [Calcium-Ion/new-api](https://github.com/Calcium-Ion/new-api): 部分供应商接入与异步任务思路参考。
+- [codedthemes/berry-free-react-admin-template](https://github.com/codedthemes/berry-free-react-admin-template): 前端管理台视觉基础。
+- [minimal-ui-kit/material-kit-react](https://github.com/minimal-ui-kit/material-kit-react): 部分界面样式参考。
+- [zeromicro/go-zero](https://github.com/zeromicro/go-zero): 限流器等实现参考。
 
-感谢以上项目的作者和贡献者
+## Legacy README
 
-## 交流群
-
-<img src="https://github.com/user-attachments/assets/d1395dac-bc97-481d-af40-ac47e6a00158" width="300">
-
-## 其他
-
-<a href="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history?repo_id=689214770" target="_blank" style="display: block" align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history/thumbnail.png?repo_id=689214770&image_size=auto&color_scheme=dark" width="721" height="auto">
-    <img alt="Star History of MartialBE/one-api" src="https://next.ossinsight.io/widgets/official/analyze-repo-stars-history/thumbnail.png?repo_id=689214770&image_size=auto&color_scheme=light" width="721" height="auto">
-  </picture>
-</a>
+[旧版 README（历史介绍与兼容内容）](./README.legacy.md)
