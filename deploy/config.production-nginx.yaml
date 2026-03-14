@@ -24,7 +24,9 @@ proxy_protocol_enabled: false
 # Fill these with real production values.
 session_secret: "replace-with-a-random-session-secret"
 user_token_secret: "replace-with-at-least-32-random-characters"
-hashids_salt: "replace-with-a-stable-random-salt"
+# Optional: custom sqids alphabet for user tokens.
+# Leave empty unless you intentionally need a custom alphabet with unique characters only.
+hashids_salt: ""
 
 # Replace with your real database in production.
 sql_dsn: "postgres://user:password@127.0.0.1:5432/tokilake"

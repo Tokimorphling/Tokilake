@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/sqids/sqids-go"
+
+	"one-api/common/logger"
 )
 
 var (
@@ -31,7 +33,7 @@ func InitUserToken() error {
 	sqidsAlphabet := viper.GetString("hashids_salt")
 
 	if tokenSecret == "" {
-		return errors.New("token_secret or hashids_salt is not set")
+		return errors.New("user_token_secret is not set")
 	}
 
 	var err error
@@ -45,6 +47,11 @@ func InitUserToken() error {
 	}
 
 	hashids, err = sqids.New(sqidsOptions)
+	if err != nil && sqidsAlphabet != "" {
+		logger.SysError("invalid hashids_salt, falling back to default sqids alphabet: " + err.Error())
+		sqidsOptions.Alphabet = ""
+		hashids, err = sqids.New(sqidsOptions)
+	}
 
 	jwtSecretBytes = []byte(tokenSecret)
 

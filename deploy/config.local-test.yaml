@@ -21,7 +21,9 @@ server_address: "http://127.0.0.1:3000"
 # Fill these with your own values before using.
 session_secret: "replace-with-a-random-session-secret"
 user_token_secret: "replace-with-at-least-32-random-characters"
-hashids_salt: "replace-with-a-stable-random-salt"
+# Optional: custom sqids alphabet for user tokens.
+# Leave empty unless you intentionally need a custom alphabet with unique characters only.
+hashids_salt: ""
 
 # Local defaults: keep setup simple.
 sqlite_path: "one-api.db"

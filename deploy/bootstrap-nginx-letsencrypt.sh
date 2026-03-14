@@ -12,8 +12,6 @@ listen_port="19981"
 skip_package_install="false"
 timezone_value="UTC"
 user_token_secret=""
-session_secret=""
-hashids_salt=""
 
 usage() {
   cat <<'EOF'
@@ -30,8 +28,6 @@ Options:
   --port <port>                  Tokilake listen port, default 19981
   --tz <timezone>                Container timezone env, default UTC
   --user-token-secret <secret>   Persisted USER_TOKEN_SECRET override
-  --session-secret <secret>      Persisted SESSION_SECRET override
-  --hashids-salt <salt>          Persisted hashids_salt override
   --skip-package-install         Skip apt package installation
   --help                         Show this help
 
@@ -79,14 +75,6 @@ while [ "$#" -gt 0 ]; do
       user_token_secret="${2:-}"
       shift 2
       ;;
-    --session-secret)
-      session_secret="${2:-}"
-      shift 2
-      ;;
-    --hashids-salt)
-      hashids_salt="${2:-}"
-      shift 2
-      ;;
     --skip-package-install)
       skip_package_install="true"
       shift
@@ -125,9 +113,21 @@ if [ ! -f "$config_source" ]; then
 fi
 
 if [ "$skip_package_install" != "true" ]; then
+  packages=(nginx certbot python3 python3-certbot-nginx)
+  if ! command -v docker >/dev/null 2>&1; then
+    packages=(docker.io "${packages[@]}")
+  fi
   apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io nginx certbot python3-certbot-nginx
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 fi
+
+for required_cmd in docker nginx certbot systemctl python3; do
+  if ! command -v "$required_cmd" >/dev/null 2>&1; then
+    echo "required command not found: $required_cmd" >&2
+    echo "install packages first or rerun without --skip-package-install" >&2
+    exit 1
+  fi
+done
 
 systemctl enable --now docker
 
@@ -135,21 +135,40 @@ install_root="${app_dir}"
 config_dir="${install_root}/config"
 data_dir="${install_root}/data"
 config_dest="${config_dir}/config.yaml"
-nginx_conf="/etc/nginx/sites-available/${domain}.conf"
-nginx_enabled="/etc/nginx/sites-enabled/${domain}.conf"
 webroot="/var/www/certbot"
+nginx_conf=""
+nginx_enabled=""
+nginx_layout=""
+config_created="false"
 
-mkdir -p "$config_dir" "$data_dir" "${data_dir}/logs" "$webroot"
+if [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
+  nginx_conf="/etc/nginx/sites-available/${domain}.conf"
+  nginx_enabled="/etc/nginx/sites-enabled/${domain}.conf"
+  nginx_layout="debian"
+elif [ -d /etc/nginx/conf.d ]; then
+  nginx_conf="/etc/nginx/conf.d/${domain}.conf"
+  nginx_layout="conf.d"
+else
+  echo "unsupported nginx config layout under /etc/nginx" >&2
+  echo "expected either sites-available/sites-enabled or conf.d" >&2
+  exit 1
+fi
+
+mkdir -p "$config_dir" "$data_dir" "${data_dir}/logs" "$webroot" \
+         "/etc/nginx/sites-available" "/etc/nginx/sites-enabled"
 
 if [ ! -f "$config_dest" ]; then
   install -m 0644 "$config_source" "$config_dest"
+  config_created="true"
 fi
 
-python3 - "$config_dest" "$domain" "$listen_port" "$user_token_secret" "$session_secret" "$hashids_salt" <<'PY'
+python3 - "$config_dest" "$domain" "$listen_port" "$user_token_secret" "$config_created" <<'PY'
 import secrets
 import sys
 
-config_path, domain, port, token_secret_arg, session_secret_arg, hashids_salt_arg = sys.argv[1:7]
+config_path, domain, port, token_secret_arg, config_created = sys.argv[1:6]
+
+default_sqids_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 with open(config_path, "r", encoding="utf-8") as f:
     lines = f.read().splitlines()
@@ -157,7 +176,7 @@ with open(config_path, "r", encoding="utf-8") as f:
 placeholders = {
     "user_token_secret": "replace-with-at-least-32-random-characters",
     "session_secret": "replace-with-a-random-session-secret",
-    "hashids_salt": "replace-with-a-stable-random-salt",
+    "hashids_salt": "replace-with-a-random-unique-sqids-alphabet",
 }
 
 overrides = {
@@ -167,6 +186,17 @@ overrides = {
 
 def normalize_value(value):
     return value.strip().strip('"').strip("'")
+
+def is_valid_sqids_alphabet(value):
+    return (
+        len(value) >= 3
+        and value.isascii()
+        and len(set(value)) == len(value)
+    )
+
+def generate_sqids_alphabet():
+    rng = secrets.SystemRandom()
+    return "".join(rng.sample(list(default_sqids_alphabet), len(default_sqids_alphabet)))
 
 existing = {}
 for line in lines:
@@ -179,13 +209,18 @@ token_secret_value = token_secret_arg or existing.get("user_token_secret", "")
 if not token_secret_value or token_secret_value == placeholders["user_token_secret"]:
     token_secret_value = secrets.token_hex(32)
 
-session_secret_value = session_secret_arg or existing.get("session_secret", "")
+session_secret_value = existing.get("session_secret", "")
 if not session_secret_value or session_secret_value == placeholders["session_secret"]:
     session_secret_value = secrets.token_hex(32)
 
-hashids_salt_value = hashids_salt_arg or existing.get("hashids_salt", "")
-if not hashids_salt_value or hashids_salt_value == placeholders["hashids_salt"]:
-    hashids_salt_value = secrets.token_hex(24)
+hashids_salt_value = existing.get("hashids_salt", "")
+if hashids_salt_value == "replace-with-a-stable-random-salt" or hashids_salt_value == placeholders["hashids_salt"]:
+    hashids_salt_value = generate_sqids_alphabet()
+elif not hashids_salt_value:
+    if config_created == "true":
+        hashids_salt_value = generate_sqids_alphabet()
+elif config_created == "true" and not is_valid_sqids_alphabet(hashids_salt_value):
+    hashids_salt_value = generate_sqids_alphabet()
 
 overrides["user_token_secret"] = token_secret_value
 overrides["session_secret"] = session_secret_value
@@ -247,8 +282,10 @@ server {
 }
 EOF
 
-ln -sfn "$nginx_conf" "$nginx_enabled"
-rm -f /etc/nginx/sites-enabled/default
+if [ "$nginx_layout" = "debian" ]; then
+  ln -sfn "$nginx_conf" "$nginx_enabled"
+  rm -f /etc/nginx/sites-enabled/default
+fi
 
 docker pull "$image"
 docker rm -f "$container_name" >/dev/null 2>&1 || true

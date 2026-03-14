@@ -160,12 +160,14 @@ mkdir -p \
   "${compose_root}/letsencrypt"
 
 config_dest="${compose_root}/config/config.yaml"
+config_created="false"
 if [ ! -f "$config_dest" ]; then
   install -m 0644 "$config_source" "$config_dest"
+  config_created="true"
 fi
 
 postgres_password_value="$(
-python3 - "$config_dest" "$domain" "$postgres_db" "$postgres_user" "$postgres_password" "$user_token_secret" "$session_secret" "$hashids_salt" <<'PY'
+python3 - "$config_dest" "$domain" "$postgres_db" "$postgres_user" "$postgres_password" "$user_token_secret" "$session_secret" "$hashids_salt" "$config_created" <<'PY'
 import secrets
 import sys
 
@@ -178,7 +180,10 @@ import sys
     token_secret_arg,
     session_secret_arg,
     hashids_salt_arg,
-) = sys.argv[1:9]
+    config_created,
+) = sys.argv[1:10]
+
+default_sqids_alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 with open(config_path, "r", encoding="utf-8") as f:
     lines = f.read().splitlines()
@@ -186,11 +191,22 @@ with open(config_path, "r", encoding="utf-8") as f:
 placeholders = {
     "user_token_secret": "replace-with-at-least-32-random-characters",
     "session_secret": "replace-with-a-random-session-secret",
-    "hashids_salt": "replace-with-a-stable-random-salt",
+    "hashids_salt": "replace-with-a-random-unique-sqids-alphabet",
 }
 
 def normalize_value(value):
     return value.strip().strip('"').strip("'")
+
+def is_valid_sqids_alphabet(value):
+    return (
+        len(value) >= 3
+        and value.isascii()
+        and len(set(value)) == len(value)
+    )
+
+def generate_sqids_alphabet():
+    rng = secrets.SystemRandom()
+    return "".join(rng.sample(list(default_sqids_alphabet), len(default_sqids_alphabet)))
 
 existing = {}
 for line in lines:
@@ -216,8 +232,15 @@ if not session_secret_value or session_secret_value == placeholders["session_sec
     session_secret_value = secrets.token_hex(32)
 
 hashids_salt_value = hashids_salt_arg or existing.get("hashids_salt", "")
-if not hashids_salt_value or hashids_salt_value == placeholders["hashids_salt"]:
-    hashids_salt_value = secrets.token_hex(24)
+if hashids_salt_arg and hashids_salt_value and not is_valid_sqids_alphabet(hashids_salt_value):
+    raise SystemExit("invalid --hashids-salt: must be ASCII, unique characters only, length >= 3")
+if hashids_salt_value == "replace-with-a-stable-random-salt" or hashids_salt_value == placeholders["hashids_salt"]:
+    hashids_salt_value = generate_sqids_alphabet()
+elif not hashids_salt_value:
+    if config_created == "true":
+        hashids_salt_value = generate_sqids_alphabet()
+elif config_created == "true" and not is_valid_sqids_alphabet(hashids_salt_value):
+    hashids_salt_value = generate_sqids_alphabet()
 
 overrides = {
     "server_address": f"https://{domain}",

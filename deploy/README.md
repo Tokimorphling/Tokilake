@@ -58,7 +58,12 @@ Before running it:
 
 - make sure your DNS A/AAAA record already points to this server
 - keep ports `80` and `443` reachable from the public internet during certificate issuance
-- the script will persist `USER_TOKEN_SECRET`, `SESSION_SECRET`, and `hashids_salt` into the host config file on first run if placeholders are still present
+- the script will persist `USER_TOKEN_SECRET` and `SESSION_SECRET` into the host config file on first run if placeholders are still present
+- on first bootstrap, if `hashids_salt` is empty, the script will generate a valid random sqids alphabet and persist it; reruns preserve the existing value
+- if you set `hashids_salt` manually, it must be ASCII, unique characters only, length >= 3
+- if `docker` already exists on the host, the bootstrap script will not install `docker.io` again
+- when using `--skip-package-install`, `docker`, `nginx`, `certbot`, `systemctl`, and `python3` must already be installed
+- the bootstrap script supports both Debian-style `sites-available/sites-enabled` and `conf.d` nginx layouts
 
 Compose bootstrap example:
 
@@ -72,7 +77,7 @@ Compose bootstrap example:
 This will:
 
 - create `deploy/runtime/` for config and data
-- generate `USER_TOKEN_SECRET`, `SESSION_SECRET`, `hashids_salt`, and a Postgres password if placeholders are still present
+- generate `USER_TOKEN_SECRET`, `SESSION_SECRET`, a valid random sqids alphabet, and a Postgres password if placeholders are still present
 - write compose env values to `deploy/.env.compose`
 - start `postgres`, `redis`, `tokilake`, and `nginx`
 - run `nginx` inside Docker as part of the compose stack, not on the host
