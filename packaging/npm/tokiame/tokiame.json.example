@@ -1,0 +1,16 @@
+{
+  "gateway_url": "wss://api.example.com/api/tokilake/connect",
+  "token": "sk-your-user-token",
+  "namespace": "demo-worker",
+  "node_name": "gpu-01",
+  "group": "default",
+  "backend_type": "openai",
+  "heartbeat_interval_seconds": 15,
+  "reconnect_delay_seconds": 5,
+  "model_targets": {
+    "gpt-4o-mini": {
+      "url": "http://127.0.0.1:8000/v1",
+      "mapped_name": "gpt-4o-mini"
+    }
+  }
+}

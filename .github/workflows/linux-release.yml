@@ -5,17 +5,16 @@ permissions:
 on:
   push:
     tags:
-      - "*"
-      - "!*-alpha*"
+      - "v*"
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 22.20.0
       - name: Build Frontend
@@ -27,28 +26,40 @@ jobs:
           VITE_APP_VERSION=$(git describe --tags) yarn run build
           cd ..
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.25.0"
-      - name: Build Backend (amd64)
+      - name: Download Go modules
+        run: go mod download
+      - name: Build release artifacts
         run: |
-          go mod download
-          go build -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)' -extldflags '-static'" -o one-api
-
-      - name: Build Backend (arm64)
-        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release-build release-artifacts
+          go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-linux-amd64 .
           sudo rm /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install gcc-aarch64-linux-gnu
-          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)' -extldflags '-static'" -o one-api-arm64
+          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-linux-arm64 .
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokiame-linux-amd64 ./cmd/tokiame
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokiame-linux-arm64 ./cmd/tokiame
+
+          ./hack/scripts/package-release.sh tokilake "$VERSION" linux amd64 release-build/tokilake-linux-amd64 release-artifacts
+          ./hack/scripts/package-release.sh tokilake "$VERSION" linux arm64 release-build/tokilake-linux-arm64 release-artifacts
+          ./hack/scripts/package-release.sh tokiame "$VERSION" linux amd64 release-build/tokiame-linux-amd64 release-artifacts
+          ./hack/scripts/package-release.sh tokiame "$VERSION" linux arm64 release-build/tokiame-linux-arm64 release-artifacts
+          ./hack/scripts/write-sha256sums.sh \
+            release-artifacts/SHA256SUMS-linux.txt \
+            release-artifacts/tokilake_"$VERSION"_linux_amd64.tar.gz \
+            release-artifacts/tokilake_"$VERSION"_linux_arm64.tar.gz \
+            release-artifacts/tokiame_"$VERSION"_linux_amd64.tar.gz \
+            release-artifacts/tokiame_"$VERSION"_linux_arm64.tar.gz
 
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            one-api
-            one-api-arm64
+            release-artifacts/*
           draft: true
           generate_release_notes: true
         env:

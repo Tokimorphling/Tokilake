@@ -1,0 +1,39 @@
+{
+  "name": "@tokilake/tokiame",
+  "version": "0.0.0",
+  "description": "Thin npm installer for the Tokiame worker binary",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Tokimorphling/Tokilake",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tokimorphling/Tokilake.git",
+    "directory": "packaging/npm/tokiame"
+  },
+  "bugs": {
+    "url": "https://github.com/Tokimorphling/Tokilake/issues"
+  },
+  "bin": {
+    "tokiame": "./bin/tokiame.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "README.md",
+    "tokiame.json.example"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

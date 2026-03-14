@@ -8,6 +8,8 @@ vars:
   ROOT_DIR: $(pwd)
   BUILD_DIR: $(pwd)/_output
   BIN_DIR: $(pwd)/_output/one-hub
+  TOKILAKE_BIN: $(pwd)/dist/tokilake
+  TOKIAME_BIN: $(pwd)/dist/tokiame
   VERSION_PKG: one-api/common/config
   BUILD_VERSION: $(git describe --tags || echo "dev")
   BUILD_DATE: $(date +%Y%m%d)
@@ -81,14 +83,45 @@ tasks:
     cmds:
       - go build -o {{.BIN_DIR}} -ldflags "{{.LDFLAGS}}"
 
+  tokilake:
+    desc: build tokilake binary into dist/
+    deps:
+      - gomod
+      - web
+    cmds:
+      - mkdir -p dist
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.TOKILAKE_BIN}} .
+
+  tokiame:
+    desc: build tokiame binary into dist/
+    deps:
+      - gomod
+    cmds:
+      - mkdir -p dist
+      - CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.TOKIAME_BIN}} ./cmd/tokiame
+
+  docker:tokilake:
+    desc: build tokilake docker image
+    deps:
+      - gomod
+      - web
+    cmds:
+      - docker buildx build --pull --target tokilake --platform linux/amd64 -t "{{.IMAGE}}-tokilake" .
+
+  docker:tokiame:
+    desc: build tokiame docker image
+    deps:
+      - gomod
+    cmds:
+      - docker buildx build --pull --target tokiame --platform linux/amd64 -t "{{.IMAGE}}-tokiame" .
+
   docker:
     desc: build docker image
     deps:
       - gomod
       - web
     cmds:
-      - GOOS=linux GOARCH=amd64 go build -o {{.BIN_DIR}} -ldflags "{{.LDFLAGS}}"
-      - docker buildx build --pull --push --platform linux/amd64 -t "{{.IMAGE}}" .
+      - docker buildx build --pull --target tokilake --platform linux/amd64 -t "{{.IMAGE}}" .
 
   default:
     cmds:

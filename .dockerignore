@@ -1,0 +1,13 @@
+.git
+.github
+.air.toml
+dist
+logs
+target
+build
+_output
+web/node_modules
+web/build
+web/.vite
+*.db
+*.log

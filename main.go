@@ -126,9 +126,8 @@ func initHttpServer() {
 	server.Use(middleware.RequestId())
 	middleware.SetUpLogger(server)
 
-	trustedHeader := viper.GetString("trusted_header")
-	if trustedHeader != "" {
-		server.TrustedPlatform = trustedHeader
+	if err := applyServerProxyConfig(server); err != nil {
+		logger.FatalLog("failed to configure trusted proxies: " + err.Error())
 	}
 
 	store := cookie.NewStore([]byte(config.SessionSecret))
@@ -144,7 +143,7 @@ func initHttpServer() {
 	router.SetRouter(server, buildFS, indexPage)
 	port := viper.GetString("port")
 
-	err := server.Run(":" + port)
+	err := runHTTPServer(server, port)
 	if err != nil {
 		logger.FatalLog("failed to start HTTP server: " + err.Error())
 	}

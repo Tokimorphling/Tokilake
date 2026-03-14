@@ -1,37 +1,74 @@
-FROM node:22.20 as builder
+# syntax=docker/dockerfile:1.7
 
-WORKDIR /build
+FROM node:22.20-bookworm-slim AS web-builder
 
-COPY web/package.json .
-COPY web/yarn.lock .
+WORKDIR /src/web
 
-RUN yarn --frozen-lockfile
+COPY web/package.json web/yarn.lock ./
+RUN corepack enable && yarn install --frozen-lockfile
 
-COPY ./web .
-COPY ./VERSION .
-RUN DISABLE_ESLINT_PLUGIN='true' VITE_APP_VERSION=$(cat VERSION) npm run build
+COPY web/ ./
 
-FROM golang:1.25.0 AS builder2
+ARG APP_VERSION=dev
+ENV DISABLE_ESLINT_PLUGIN=true
+ENV VITE_APP_VERSION=${APP_VERSION}
 
-ENV GO111MODULE=on \
-    CGO_ENABLED=1 \
-    GOOS=linux
+RUN yarn build
 
-WORKDIR /build
-ADD go.mod go.sum ./
+FROM golang:1.25.0-bookworm AS tokilake-builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
 RUN go mod download
+
 COPY . .
-COPY --from=builder /build/build ./web/build
-RUN go build -ldflags "-s -w -X 'one-api/common.Version=$(cat VERSION)' -extldflags '-static'" -o one-api
+COPY --from=web-builder /src/web/build ./web/build
 
-FROM alpine
+ARG APP_VERSION=dev
 
-RUN apk update \
-    && apk upgrade \
-    && apk add --no-cache ca-certificates tzdata \
-    && update-ca-certificates 2>/dev/null || true
+RUN go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=${APP_VERSION}'" -o /out/tokilake .
 
-COPY --from=builder2 /build/one-api /
-EXPOSE 3000
+FROM golang:1.25.0-bookworm AS tokiame-builder
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG APP_VERSION=dev
+
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=${APP_VERSION}'" -o /out/tokiame ./cmd/tokiame
+
+FROM debian:bookworm-slim AS runtime-base
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /etc/tokilake /root/.tokilake
+
 WORKDIR /data
-ENTRYPOINT ["/one-api"]
+
+COPY config.example.yaml /etc/tokilake/config.example.yaml
+COPY packaging/tokiame.json.example /etc/tokilake/tokiame.json.example
+
+FROM runtime-base AS tokilake
+
+COPY --from=tokilake-builder /out/tokilake /usr/local/bin/tokilake
+
+EXPOSE 3000 19981
+
+ENTRYPOINT ["/usr/local/bin/tokilake"]
+CMD ["--config", "/data/config.yaml", "--log-dir", "/data/logs"]
+
+FROM runtime-base AS tokiame
+
+COPY --from=tokiame-builder /out/tokiame /usr/local/bin/tokiame
+
+ENTRYPOINT ["/usr/local/bin/tokiame"]

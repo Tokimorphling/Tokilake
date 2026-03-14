@@ -29,6 +29,27 @@ lastUpdated: true
 
 ## Docker 部署
 
+当前仓库的容器构建产物分为两类：
+
+- `tokilake`: 主服务镜像，提供 Web 管理台、OpenAI 兼容 API、Tokilake 网关
+- `tokiame`: 独立 worker 镜像，用于接入自托管模型后端
+
+推荐发布名示例：
+
+- `ghcr.io/<your-org>/tokilake:latest`
+- `ghcr.io/<your-org>/tokiame:latest`
+
+如果你不想运行容器，也可以直接使用 GitHub Releases 里的预编译归档：
+
+- `tokilake_<version>_<os>_<arch>.tar.gz|zip`
+- `tokiame_<version>_<os>_<arch>.tar.gz|zip`
+
+每个 release 还会额外附带：
+
+- `SHA256SUMS-linux.txt`
+- `SHA256SUMS-darwin.txt`
+- `SHA256SUMS-windows.txt`
+
 ### 准备工作
 
 1. 创建数据目录：
@@ -50,7 +71,7 @@ sudo systemctl start docker
 
 ::: warning 注意
 
-- `-p 3000:3000` 中的第一个 `3000` 是宿主机的端口，可以根据需要进行修改。
+- `-p 19981:19981` 中的第一个 `19981` 是宿主机的端口，可以根据需要进行修改。
 - 数据和日志将会保存在宿主机的 `/data/one-hub` 目录，请确保该目录存在且具有写入权限，或者更改为合适的目录。
 - 如果启动失败，请添加 `--privileged=true`，具体参考 [issue #482](https://github.com/songquanpeng/one-api/issues/482)。
 - 如果你的并发量较大，**务必**设置 `SQL_DSN`。
@@ -63,14 +84,17 @@ sudo systemctl start docker
 #### 使用 SQLite
 
 ```shell
-docker run -d -p 3000:3000 \
-  --name one-hub \
+docker run -d -p 19981:19981 \
+  --name tokilake \
   --restart always \
   -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="https://api.example.com" \
   -e USER_TOKEN_SECRET="user_token_secret" \
   -e SESSION_SECRET="session_secret" \
   -v /data/one-hub:/data \
-  ghcr.io/martialbe/one-api
+  ghcr.io/<your-org>/tokilake:latest
 ```
 
 #### 使用 MySQL
@@ -78,33 +102,39 @@ docker run -d -p 3000:3000 \
 在 SQLite 的基础上，添加 `-e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi"`。请根据实际情况修改数据库连接参数。
 
 ```shell
-docker run -d -p 3000:3000 \
-  --name one-hub \
+docker run -d -p 19981:19981 \
+  --name tokilake \
   --restart always \
   -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="https://api.example.com" \
   -e USER_TOKEN_SECRET="user_token_secret" \
   -e SESSION_SECRET="session_secret" \
   -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
   -v /data/one-hub:/data \
-  ghcr.io/martialbe/one-api
+  ghcr.io/<your-org>/tokilake:latest
 
 ```
 
 #### 使用 PostgreSQL
 
 ```shell
-docker run -d -p 3000:3000 \
-  --name one-hub \
+docker run -d -p 19981:19981 \
+  --name tokilake \
   --restart always \
   -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="https://api.example.com" \
   -e USER_TOKEN_SECRET="user_token_secret" \
   -e SESSION_SECRET="session_secret" \
   -e SQL_DSN="postgres://postgres:123456@localhost:5432/oneapi" \
   -v /data/one-hub:/data \
-  ghcr.io/martialbe/one-api
+  ghcr.io/<your-org>/tokilake:latest
 ```
 
-部署完毕后，访问 `http://localhost:3000` 即可。
+部署完毕后，访问 `http://localhost:19981` 或你通过反向代理暴露的正式域名即可。
 
 ### 使用配置文件部署
 
@@ -129,13 +159,16 @@ sql_dsn: "root:123456@tcp(localhost:3306)/oneapi" # MySQL配置示例
 3. 运行容器
 
 ```shell
-docker run -d -p 3000:3000 \
-  --name one-hub \
+docker run -d -p 19981:19981 \
+  --name tokilake \
   --restart always \
   -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
   -v /data/one-hub:/data \
-  ghcr.io/martialbe/one-api
+  ghcr.io/<your-org>/tokilake:latest
 ```
+
+如果你希望使用配置文件，请将它挂载到容器内的 `/data/config.yaml`。容器默认启动命令会自动尝试读取该文件。
 
 ## Docker Compose 部署
 
@@ -183,7 +216,31 @@ docker-compose ps
 
 请确保所有的服务都已经成功启动，并且状态为 'Up'。
 
-部署完毕后，访问 `http://localhost:3000` 即可。
+部署完毕后，访问 `http://localhost:19981` 或你通过反向代理暴露的正式域名即可。
+
+## Tokiame Worker 容器运行
+
+如果你希望把 Tokiame 也作为容器运行，可以直接使用 `tokiame` 镜像：
+
+```bash
+docker run --rm \
+  --name tokiame \
+  -e TOKIAME_GATEWAY_URL="wss://api.example.com/api/tokilake/connect" \
+  -e TOKIAME_TOKEN="sk-your-user-token" \
+  -e TOKIAME_NAMESPACE="demo-worker" \
+  -e TOKIAME_MODEL_TARGETS='{"gpt-4o-mini":{"url":"http://127.0.0.1:8000/v1"}}' \
+  ghcr.io/<your-org>/tokiame:latest
+```
+
+如果你更习惯配置文件，可以挂载到容器里，然后追加启动参数：
+
+```bash
+docker run --rm \
+  --name tokiame \
+  -v $(pwd)/tokiame.json:/data/tokiame.json:ro \
+  ghcr.io/<your-org>/tokiame:latest \
+  --config /data/tokiame.json
+```
 
 ## 手动部署
 
@@ -203,17 +260,20 @@ docker-compose ps
 3. **运行应用**：为构建的应用添加执行权限，并运行：
 
    ```shell
-   chmod u+x one-api
-   ./one-api --port 3000 --log-dir ./logs
+   task tokilake
+   chmod u+x dist/tokilake
+   ./dist/tokilake --config ./dist/config.yaml --port 19981 --log-dir ./dist/logs
    ```
 
-4. **访问应用**：在浏览器中访问 `http://localhost:3000` 并登录。初始账号用户名为 `root`，密码为 `123456`。
+4. **访问应用**：在浏览器中访问 `http://localhost:19981` 并登录。初始账号用户名为 `root`，密码为 `123456`。
 
 5. **重新编译**：如果需要重新编译，可以使用以下命令：
 
    ```shell
    make clean
    make
+   task tokilake
+   task tokiame
    ```
 
 请确保在执行以上步骤时，你的环境已经安装了必要的工具，如 Git、Node.js、yarn 和 Go。

@@ -5,7 +5,11 @@ log_level: "info" # 日志级别，可选值为 "debug"、"info"、"warn"、"err
 log_dir: "./logs" # 日志目录
 session_secret: "" # 会话密钥，未设置则使用随机值。
 disable_token_encoders: false # 是否禁用 token 编码器计算tokens。启用后 内存占用可减少 40MB 左右，但是stream模式下tokens计算不准确
-trusted_header: "" # 可信头部，"CF-Connecting-IP" 用于 Cloudflare，"X-Appengine-Remote-Addr" 用于 Google App Engine，未设置则不使用。 可以解决一些代理问题，如获取用户真实IP
+trusted_header: "" # 额外的真实IP请求头，会在 trusted_proxies 命中时优先于 X-Forwarded-For / X-Real-IP，例如 "CF-Connecting-IP"
+trusted_proxies: # 可信反向代理 IP / CIDR。默认仅信任回环地址。可设为 [] 或 "none" 禁用头部透传。
+  - "127.0.0.1"
+  - "::1"
+proxy_protocol_enabled: false # 是否启用 PROXY protocol（适用于 nginx stream / HAProxy / 部分负载均衡）
 language: "zh_CN" #国际化默认语言 目前支持`zh_CN`/`en_US`/ja_JP`/`zh_HK`
 favicon: "" # 设置favicon路径,可以是ico的URL，也可以是文件路径。前后端分离部署的请直接修改前端的favicon.ico文件
 logs:
@@ -121,4 +125,3 @@ uptime_kuma:
   enable: false # 是否开启uptime kuma状态展示
   domain: ""     # uptime-kuma项目地址 例如https://status.xxxxx.com
   status_page_name: "" #  uptime-kuma状态页面slug
-

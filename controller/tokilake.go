@@ -2,7 +2,9 @@ package controller
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 
 	"one-api/common/logger"
 	tokilakesvc "one-api/service/tokilake"
@@ -16,6 +18,19 @@ var tokilakeUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
+}
+
+func resolveGatewayRemoteAddr(clientIP string, requestRemoteAddr string) string {
+	clientIP = strings.TrimSpace(clientIP)
+	requestRemoteAddr = strings.TrimSpace(requestRemoteAddr)
+	if clientIP == "" {
+		return requestRemoteAddr
+	}
+	host, _, err := net.SplitHostPort(requestRemoteAddr)
+	if err == nil && host == clientIP {
+		return requestRemoteAddr
+	}
+	return clientIP
 }
 
 func TokilakeConnect(c *gin.Context) {
@@ -38,7 +53,8 @@ func TokilakeConnect(c *gin.Context) {
 	}
 	defer wsConn.Close()
 
-	if err = tokilakesvc.HandleGatewayConnection(c.Request.Context(), wsConn, token, tokenKey, c.Request.RemoteAddr); err != nil {
-		logger.SysLog(fmt.Sprintf("tokilake gateway session closed: remote=%s err=%v", c.Request.RemoteAddr, err))
+	remoteAddr := resolveGatewayRemoteAddr(c.ClientIP(), c.Request.RemoteAddr)
+	if err = tokilakesvc.HandleGatewayConnection(c.Request.Context(), wsConn, token, tokenKey, remoteAddr); err != nil {
+		logger.SysLog(fmt.Sprintf("tokilake gateway session closed: remote=%s err=%v", remoteAddr, err))
 	}
 }

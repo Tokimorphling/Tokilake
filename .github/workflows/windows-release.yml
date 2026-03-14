@@ -5,8 +5,7 @@ permissions:
 on:
   push:
     tags:
-      - "*"
-      - "!*-alpha*"
+      - "v*"
 jobs:
   release:
     runs-on: windows-latest
@@ -15,10 +14,10 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 22.20.0
       - name: Build Frontend
@@ -30,18 +29,29 @@ jobs:
           VITE_APP_VERSION=$(git describe --tags) yarn run build
           cd ..
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: "1.25.0"
-      - name: Build Backend
+      - name: Build release artifacts
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p release-build release-artifacts
           go mod download
-          go build -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o one-api.exe
+          go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-windows-amd64.exe
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokiame-windows-amd64.exe ./cmd/tokiame
+
+          ./hack/scripts/package-release.sh tokilake "$VERSION" windows amd64 release-build/tokilake-windows-amd64.exe release-artifacts
+          ./hack/scripts/package-release.sh tokiame "$VERSION" windows amd64 release-build/tokiame-windows-amd64.exe release-artifacts
+          ./hack/scripts/write-sha256sums.sh \
+            release-artifacts/SHA256SUMS-windows.txt \
+            release-artifacts/tokilake_"$VERSION"_windows_amd64.zip \
+            release-artifacts/tokiame_"$VERSION"_windows_amd64.zip
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: one-api.exe
+          files: |
+            release-artifacts/*
           draft: true
           generate_release_notes: true
         env:

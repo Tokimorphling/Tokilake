@@ -47,6 +47,20 @@ go run .
 
 或使用你现有的部署方式启动 Tokilake。
 
+如果你使用容器方式运行主服务：
+
+```bash
+docker run -d -p 19981:19981 \
+  --name tokilake \
+  --restart always \
+  -e PORT=19981 \
+  -e SERVER_ADDRESS="https://api.example.com" \
+  -e USER_TOKEN_SECRET="user_token_secret" \
+  -e SESSION_SECRET="session_secret" \
+  -v $(pwd)/data:/data \
+  ghcr.io/<your-org>/tokilake:latest
+```
+
 ## 启动 Tokiame
 
 Tokiame 作为独立 worker 运行：
@@ -79,7 +93,34 @@ go run ./cmd/tokiame
 也可以直接指定 JSON 配置文件：
 
 ```bash
-go run ./cmd/tokiame --config ./dist/tokiame.json
+go run ./cmd/tokiame --config ./packaging/tokiame.json.example
+```
+
+也可以直接使用容器镜像运行：
+
+```bash
+docker run --rm \
+  --name tokiame \
+  -e TOKIAME_GATEWAY_URL="wss://api.example.com/api/tokilake/connect" \
+  -e TOKIAME_TOKEN="sk-your-user-token" \
+  -e TOKIAME_NAMESPACE="demo-worker" \
+  -e TOKIAME_GROUP="demo-group" \
+  -e TOKIAME_MODEL_TARGETS='{
+    "gpt-4o-mini": {
+      "url": "http://127.0.0.1:8000/v1"
+    }
+  }' \
+  ghcr.io/<your-org>/tokiame:latest
+```
+
+如果你有 JSON 配置文件，也可以挂载后通过参数传入：
+
+```bash
+docker run --rm \
+  --name tokiame \
+  -v $(pwd)/tokiame.json:/data/tokiame.json:ro \
+  ghcr.io/<your-org>/tokiame:latest \
+  --config /data/tokiame.json
 ```
 
 ## 环境变量说明
@@ -95,6 +136,7 @@ go run ./cmd/tokiame --config ./dist/tokiame.json
 - `TOKIAME_RECONNECT_DELAY_SECONDS`: 可选，断线重连间隔。
 - `TOKIAME_CONFIG`: 可选，JSON 配置文件路径；环境变量优先级更高。
 - `--config` / `-c`: 可选，等价于设置 `TOKIAME_CONFIG`。
+- 如果 `--config` 和 `TOKIAME_CONFIG` 都未设置，`tokiame` 会自动尝试加载 `~/.tokilake/tokiame.json`。
 
 `TOKIAME_MODEL_TARGETS` 支持的字段：
 
@@ -222,6 +264,81 @@ Tokiame 本地后端需要实现以下兼容接口：
 - `GET /v1/videos/{id}/content`
 
 ## 常见问题
+
+## 分发建议
+
+当前更推荐的 Tokiame 分发方式按优先级排序如下：
+
+1. GitHub Releases 预编译二进制
+2. `npm` 薄包装安装器
+3. Homebrew
+4. OCI 镜像，例如 `ghcr.io/<your-org>/tokiame:latest`
+
+这里的关键设计是：**GitHub Releases 是真实二进制源，npm 和 Homebrew 只是安装壳。**
+
+从当前仓库的 release workflow 开始，Tokiame 会随版本标签 `vX.Y.Z` 一起产出：
+
+- `tokiame_<version>_linux_amd64.tar.gz`
+- `tokiame_<version>_linux_arm64.tar.gz`
+- `tokiame_<version>_darwin_amd64.tar.gz`
+- `tokiame_<version>_darwin_arm64.tar.gz`
+- `tokiame_<version>_windows_amd64.zip`
+- `SHA256SUMS-linux.txt`
+- `SHA256SUMS-darwin.txt`
+- `SHA256SUMS-windows.txt`
+
+### npm 安装
+
+仓库内置了一个很薄的 npm 包骨架：`packaging/npm/tokiame`。它的行为是：
+
+- `npm install -g @tokilake/tokiame`
+- `postinstall` 根据当前平台下载对应 GitHub Release 归档
+- 校验 `SHA256SUMS-<os>.txt`
+- 把 `tokiame` 暴露成全局命令
+- 首次安装时自动写入 `~/.tokilake/tokiame.json.example`
+
+如果你把 GitHub Release 标记为正式发布，仓库里的 `Publish Tokiame npm` workflow 也可以顺手把 `@tokilake/tokiame` 发布到 npm。
+
+运行时默认配置路径仍然是：
+
+```text
+~/.tokilake/tokiame.json
+```
+
+安装后建议：
+
+```bash
+cp ~/.tokilake/tokiame.json.example ~/.tokilake/tokiame.json
+tokiame
+```
+
+### Homebrew 安装
+
+仓库内置了 formula 渲染脚本：
+
+```bash
+./hack/scripts/render-tokiame-homebrew-formula.sh \
+  --version 1.2.3 \
+  --darwin-amd64 <sha256> \
+  --darwin-arm64 <sha256> \
+  --linux-amd64 <sha256> \
+  --linux-arm64 <sha256> \
+  > packaging/homebrew/tokiame.rb
+```
+
+推荐做法是把生成后的 `tokiame.rb` 提交到单独的 Homebrew tap 仓库。公式安装后的默认配置路径同样是：
+
+```text
+~/.tokilake/tokiame.json
+```
+
+### 容器安装
+
+如果你希望在服务器侧用容器分发，仍然建议把 `tokiame` 当作无状态 worker：
+
+- 镜像里只放二进制和 `tokiame.json.example`
+- 真实配置通过环境变量或挂载 `/root/.tokilake/tokiame.json` 注入
+- worker 本身不持久化业务状态
 
 ### 1. `namespace already connected`
 

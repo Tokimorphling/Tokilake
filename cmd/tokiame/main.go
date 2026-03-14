@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	configPath := parseFlags()
+	configPath := resolveConfigPath(parseFlags())
 	if configPath != "" {
 		if err := os.Setenv("TOKIAME_CONFIG", configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "set TOKIAME_CONFIG failed: %v\n", err)
@@ -38,6 +38,7 @@ func main() {
 		"node_name", config.NodeName,
 		"group", config.Group,
 		"gateway_url", config.GatewayURL,
+		"config_path", strings.TrimSpace(os.Getenv("TOKIAME_CONFIG")),
 		"models", config.ModelNames(),
 		"backend_type", config.ControlPlaneBackendType(),
 	)

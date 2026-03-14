@@ -1,0 +1,58 @@
+# Production template for HTTPS terminated by nginx
+# Suitable for:
+# - Tokilake behind nginx on the same host
+# - nginx listening on 80/443
+# - Tokilake listening on 19981
+
+port: 19981
+gin_mode: "release"
+log_level: "info"
+log_dir: "./logs"
+
+# Public HTTPS address used by OAuth callbacks and links.
+server_address: "https://api.example.com"
+
+# Trust only the reverse proxy in front of Tokilake.
+# If nginx is on the same host, loopback is correct.
+# If nginx is on another host, replace these with the real proxy IP / CIDR.
+trusted_header: ""
+trusted_proxies:
+  - "127.0.0.1"
+  - "::1"
+proxy_protocol_enabled: false
+
+# Fill these with real production values.
+session_secret: "replace-with-a-random-session-secret"
+user_token_secret: "replace-with-at-least-32-random-characters"
+hashids_salt: "replace-with-a-stable-random-salt"
+
+# Replace with your real database in production.
+sql_dsn: "postgres://user:password@127.0.0.1:5432/tokilake"
+sqlite_path: "one-api.db"
+redis_conn_string: ""
+
+# Example auth policy: Google-only registration.
+# Adjust to match your deployment choice.
+register_enabled: true
+password_login_enabled: false
+password_register_enabled: false
+github_oauth_enabled: false
+google_oauth_enabled: true
+google_only_register_enabled: true
+wechat_auth_enabled: false
+lark_auth_enabled: false
+oidc_auth_enabled: false
+webauthn_auth_enabled: false
+google_client_id: ""
+google_client_secret: ""
+
+global:
+  api_rate_limit: 18000
+  web_rate_limit: 10000
+
+channel:
+  update_frequency: 0
+  test_frequency: 0
+
+connect_timeout: 5
+relay_timeout: 0
