@@ -1,11 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22.20-bookworm-slim AS web-builder
+FROM --platform=$BUILDPLATFORM node:22.20-bookworm-slim AS web-builder
 
 WORKDIR /src/web
 
+ENV YARN_CACHE_FOLDER=/usr/local/share/.cache/yarn
+
 COPY web/package.json web/yarn.lock ./
-RUN corepack enable && yarn install --frozen-lockfile
+RUN --mount=type=cache,target=/usr/local/share/.cache/yarn \
+    corepack enable \
+    && yarn config set registry https://registry.npmjs.org \
+    && yarn install --frozen-lockfile --network-timeout 600000
 
 COPY web/ ./
 
