@@ -22,3 +22,13 @@ _output
 /target
 Cargo.lock
 /plans
+.DS_Store
+*.swp
+*.swo
+*.tgz
+release-build/
+release-artifacts/
+/packaging/homebrew/tokiame.rb
+__pycache__/
+*.pyc
+*.pyo

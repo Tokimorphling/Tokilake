@@ -27,6 +27,16 @@ lastUpdated: true
 - `USER_TOKEN_SECRET`: 必填，用于生成用户令牌的密钥
 - `SESSION_SECRET`: 推荐填写，用于保持用户登录状态，如果不设置，每次重启后已登录用户需要重新登录
 
+推荐做法：
+
+- `USER_TOKEN_SECRET` 使用一次生成、长期固定保存的强随机字符串
+- 不要在每次容器启动时重新生成，否则已有用户 token 会全部失效
+- 可用下面的命令生成：
+
+```bash
+openssl rand -hex 32
+```
+
 ## Docker 部署
 
 当前仓库的容器构建产物分为两类：
@@ -80,6 +90,15 @@ sudo systemctl start docker
 ### 使用环境变量部署
 
 更多环境变量说明请参考 [环境变量](./env.md)。
+
+::: tip Docker 默认配置行为
+当前镜像默认启动参数里会带 `--config /data/config.yaml`，但这**不会自动把宿主机的配置文件传进容器**。
+
+也就是说：
+
+- 如果你挂载了 `/data/config.yaml`，容器会读取它
+- 如果你没有挂载这个文件，程序会跳过文件读取并继续使用环境变量
+:::
 
 #### 使用 SQLite
 
@@ -169,6 +188,19 @@ docker run -d -p 19981:19981 \
 ```
 
 如果你希望使用配置文件，请将它挂载到容器内的 `/data/config.yaml`。容器默认启动命令会自动尝试读取该文件。
+
+例如：
+
+```bash
+docker run -d -p 19981:19981 \
+  --name tokilake \
+  --restart always \
+  -v /data/one-hub/config.yaml:/data/config.yaml:ro \
+  -v /data/one-hub:/data \
+  ghcr.io/<your-org>/tokilake:latest
+```
+
+如果你选择纯环境变量方式部署，则不需要挂载 `/data/config.yaml`。
 
 ## Docker Compose 部署
 
