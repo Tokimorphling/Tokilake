@@ -25,9 +25,6 @@ jobs:
           - app: tokilake
             docker_target: tokilake
             image_name: tokilake
-          - app: tokiame
-            docker_target: tokiame
-            image_name: tokiame
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4

@@ -38,14 +38,11 @@ jobs:
           mkdir -p release-build release-artifacts
           go mod download
           go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokilake-windows-amd64.exe
-          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X 'one-api/common/config.Version=$(git describe --tags)'" -o release-build/tokiame-windows-amd64.exe ./cmd/tokiame
 
           ./hack/scripts/package-release.sh tokilake "$VERSION" windows amd64 release-build/tokilake-windows-amd64.exe release-artifacts
-          ./hack/scripts/package-release.sh tokiame "$VERSION" windows amd64 release-build/tokiame-windows-amd64.exe release-artifacts
           ./hack/scripts/write-sha256sums.sh \
             release-artifacts/SHA256SUMS-windows.txt \
-            release-artifacts/tokilake_"$VERSION"_windows_amd64.zip \
-            release-artifacts/tokiame_"$VERSION"_windows_amd64.zip
+            release-artifacts/tokilake_"$VERSION"_windows_amd64.zip
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')

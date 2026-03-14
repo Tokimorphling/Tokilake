@@ -39,20 +39,17 @@ openssl rand -hex 32
 
 ## Docker 部署
 
-当前仓库的容器构建产物分为两类：
+当前仓库的官方容器构建产物只有一类：
 
 - `tokilake`: 主服务镜像，提供 Web 管理台、OpenAI 兼容 API、Tokilake 网关
-- `tokiame`: 独立 worker 镜像，用于接入自托管模型后端
 
 推荐发布名示例：
 
 - `ghcr.io/<your-org>/tokilake:latest`
-- `ghcr.io/<your-org>/tokiame:latest`
 
 如果你不想运行容器，也可以直接使用 GitHub Releases 里的预编译归档：
 
 - `tokilake_<version>_<os>_<arch>.tar.gz|zip`
-- `tokiame_<version>_<os>_<arch>.tar.gz|zip`
 
 每个 release 还会额外附带：
 
@@ -250,30 +247,6 @@ docker-compose ps
 
 部署完毕后，访问 `http://localhost:19981` 或你通过反向代理暴露的正式域名即可。
 
-## Tokiame Worker 容器运行
-
-如果你希望把 Tokiame 也作为容器运行，可以直接使用 `tokiame` 镜像：
-
-```bash
-docker run --rm \
-  --name tokiame \
-  -e TOKIAME_GATEWAY_URL="wss://api.example.com/api/tokilake/connect" \
-  -e TOKIAME_TOKEN="sk-your-user-token" \
-  -e TOKIAME_NAMESPACE="demo-worker" \
-  -e TOKIAME_MODEL_TARGETS='{"gpt-4o-mini":{"url":"http://127.0.0.1:8000/v1"}}' \
-  ghcr.io/<your-org>/tokiame:latest
-```
-
-如果你更习惯配置文件，可以挂载到容器里，然后追加启动参数：
-
-```bash
-docker run --rm \
-  --name tokiame \
-  -v $(pwd)/tokiame.json:/data/tokiame.json:ro \
-  ghcr.io/<your-org>/tokiame:latest \
-  --config /data/tokiame.json
-```
-
 ## 手动部署
 
 1. **获取源码**：从 [GitHub Releases](https://github.com/MartialBE/one-hub/releases/latest) 下载最新的可执行文件，或者直接从源码编译。如果你选择编译源码，可以使用以下命令：
@@ -305,8 +278,9 @@ docker run --rm \
    make clean
    make
    task tokilake
-   task tokiame
    ```
+
+如果你需要运行 Tokiame worker，请参考 [Tokilake 与 Tokiame](./tokilake-tokiame.md)。当前更推荐通过源码目录执行 `go install ./cmd/tokiame` 或 `go run ./cmd/tokiame`。
 
 请确保在执行以上步骤时，你的环境已经安装了必要的工具，如 Git、Node.js、yarn 和 Go。
 
