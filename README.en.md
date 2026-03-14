@@ -10,6 +10,11 @@ Tokilake is a decentralized Large Language Model (LLM) API scheduling gateway bu
 
 > **Tokilake** is built on top of [MartialBE/one-hub](https://github.com/MartialBE/one-hub) and the broader One-API ecosystem that evolved around it.
 
+## 📖 快速开始 / Quick Start
+
+- **[User Guide (English)](./docs/guide.en.md)**
+
+
 ## 🌟 Core Concept
 
 Traditional API proxies typically act as clients, routing requests to servers with public IP addresses. If your high-performance GPUs (like an RTX 4090) are sitting quietly on a local home network, or scattered across temporary Spot Instances from various cloud providers, unifying them into a stable, accessible API is a major challenge.
