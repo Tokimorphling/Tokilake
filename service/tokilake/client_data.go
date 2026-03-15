@@ -14,6 +14,7 @@ import (
 
 	"one-api/common"
 
+	"github.com/Tokimorphling/Tokilake/common/utils"
 	"github.com/xtaci/smux"
 )
 
@@ -25,12 +26,15 @@ var allowedTunnelRequestHeaders = map[string]struct{}{
 }
 
 func (c *Client) acceptDataStreams(ctx context.Context, smuxSession *smux.Session, errCh chan<- error) {
+	c.info("accept data streams started")
 	for {
 		stream, err := smuxSession.AcceptStream()
 		if err != nil {
 			if ctx.Err() != nil {
+				c.debug("accept data streams stopped due to context cancellation")
 				return
 			}
+			c.warn("<<< accept data stream failed err=%v", err)
 			select {
 			case errCh <- fmt.Errorf("accept data stream: %w", err):
 			default:
@@ -38,6 +42,7 @@ func (c *Client) acceptDataStreams(ctx context.Context, smuxSession *smux.Sessio
 			return
 		}
 
+		c.debug("accepted new data stream")
 		go c.handleDataStream(ctx, stream)
 	}
 }
@@ -48,12 +53,16 @@ func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser
 	codec := NewTunnelStreamCodec(stream)
 	request, err := codec.ReadRequest()
 	if err != nil {
-		c.warn("read tunnel request failed err=%v", err)
+		c.warn("<<< read tunnel request failed err=%v", err)
 		return
 	}
 
+	c.info("<<< received tunnel request request_id=%s route_kind=%s method=%s path=%s model=%s is_stream=%v",
+		request.RequestID, request.RouteKind, request.Method, request.Path, request.Model, request.IsStream)
+
 	target, err := c.resolveModelTarget(request.Model)
 	if err != nil {
+		c.warn("<<< resolve model target failed request_id=%s model=%s err=%v", request.RequestID, request.Model, err)
 		_ = codec.WriteResponse(&TunnelResponse{
 			RequestID: request.RequestID,
 			Error: &ErrorMessage{
@@ -64,8 +73,13 @@ func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser
 		return
 	}
 
+	c.debug("resolved target request_id=%s model=%s upstream_model=%s url=%s backend_type=%s",
+		request.RequestID, target.ModelName, target.UpstreamModel, target.URL, target.BackendType)
+
 	requestURL, err := buildLocalTargetURL(target.URL, request.Path)
 	if err != nil {
+		c.warn("<<< build local target URL failed request_id=%s url=%s path=%s err=%v",
+			request.RequestID, target.URL, request.Path, err)
 		_ = codec.WriteResponse(&TunnelResponse{
 			RequestID: request.RequestID,
 			Error: &ErrorMessage{
@@ -79,6 +93,7 @@ func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser
 	requestHeaders := mergeRequestHeaders(request.Headers, target.Headers)
 	requestBody, requestHeaders, err := prepareRequestForTarget(request.Body, requestHeaders, target)
 	if err != nil {
+		c.warn("<<< prepare request for target failed request_id=%s err=%v", request.RequestID, err)
 		_ = codec.WriteResponse(&TunnelResponse{
 			RequestID: request.RequestID,
 			Error: &ErrorMessage{
@@ -89,8 +104,12 @@ func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser
 		return
 	}
 
+	c.debug(">>> sending local request request_id=%s url=%s method=%s headers_count=%d body=%s",
+		request.RequestID, requestURL, request.Method, len(requestHeaders), utils.ByteToStringView(requestBody, -1))
+
 	response, cleanup, err := c.doLocalRoundTrip(ctx, request.RequestID, request.Method, requestURL, requestBody, requestHeaders)
 	if err != nil {
+		c.warn("<<< local round trip failed request_id=%s url=%s err=%v", request.RequestID, requestURL, err)
 		_ = codec.WriteResponse(&TunnelResponse{
 			RequestID: request.RequestID,
 			Error: &ErrorMessage{
@@ -103,8 +122,13 @@ func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser
 	defer cleanup()
 	defer response.Body.Close()
 
+	c.debug(">>> received local response request_id=%s status=%d headers_count=%d",
+		request.RequestID, response.StatusCode, len(response.Header))
+
 	if err = c.writeHTTPResponse(codec, request.RequestID, response); err != nil {
-		c.warn("write tunnel response failed request_id=%s err=%v", request.RequestID, err)
+		c.warn("<<< write tunnel response failed request_id=%s err=%v", request.RequestID, err)
+	} else {
+		c.debug(">>> tunnel response sent successfully request_id=%s", request.RequestID)
 	}
 }
 
@@ -119,15 +143,19 @@ func (c *Client) doLocalRoundTrip(ctx context.Context, requestID string, method 
 	httpRequest, err := http.NewRequestWithContext(requestCtx, method, requestURL, bytes.NewReader(body))
 	if err != nil {
 		cleanup()
+		c.warn("<<< build local request failed request_id=%s url=%s err=%v", requestID, requestURL, err)
 		return nil, nil, fmt.Errorf("build request failed: %w", err)
 	}
 	applyLocalRequestHeaders(httpRequest, headers)
 
+	c.debug(">>> executing local HTTP request request_id=%s %s %s", requestID, method, requestURL)
 	response, err := http.DefaultClient.Do(httpRequest)
 	if err != nil {
 		cleanup()
+		c.warn("<<< local HTTP request failed request_id=%s url=%s err=%v", requestID, requestURL, err)
 		return nil, nil, fmt.Errorf("do request failed: %w", err)
 	}
+	c.debug("<<< local HTTP response received request_id=%s status=%d", requestID, response.StatusCode)
 	return response, cleanup, nil
 }
 
@@ -135,29 +163,46 @@ func (c *Client) writeHTTPResponse(codec *TunnelStreamCodec, requestID string, r
 	if response == nil {
 		return fmt.Errorf("response is nil")
 	}
+
+	// 发送响应头
 	if err := codec.WriteResponse(&TunnelResponse{
 		RequestID:  requestID,
 		StatusCode: response.StatusCode,
 		Headers:    flattenHTTPHeaders(response.Header),
 	}); err != nil {
+		c.warn("<<< write response headers failed request_id=%s status=%d err=%v", requestID, response.StatusCode, err)
 		return err
 	}
+	c.debug(">>> response headers sent request_id=%s status=%d", requestID, response.StatusCode)
+
 	buffer := make([]byte, tunnelChunkSize)
+	totalBytes := 0
+	chunkCount := 0
+
 	for {
 		n, readErr := response.Body.Read(buffer)
 		if n > 0 {
+			totalBytes += n
+			chunkCount++
 			if writeErr := codec.WriteResponse(&TunnelResponse{
 				RequestID: requestID,
 				BodyChunk: append([]byte(nil), buffer[:n]...),
 			}); writeErr != nil {
+				c.warn("<<< write response body chunk failed request_id=%s chunk=%d bytes=%d err=%v",
+					requestID, chunkCount, n, writeErr)
 				return writeErr
 			}
 		}
 		if readErr == io.EOF {
-			return codec.WriteResponse(&TunnelResponse{
+			if writeErr := codec.WriteResponse(&TunnelResponse{
 				RequestID: requestID,
 				EOF:       true,
-			})
+			}); writeErr != nil {
+				c.warn("<<< write response EOF failed request_id=%s err=%v", requestID, writeErr)
+				return writeErr
+			}
+			c.debug(">>> response body sent completely request_id=%s total_bytes=%d chunks=%d", requestID, totalBytes, chunkCount)
+			return nil
 		}
 		if readErr != nil {
 			_ = codec.WriteResponse(&TunnelResponse{
@@ -167,6 +212,7 @@ func (c *Client) writeHTTPResponse(codec *TunnelStreamCodec, requestID string, r
 					Message: readErr.Error(),
 				},
 			})
+			c.warn("<<< read local response body failed request_id=%s total_bytes=%d err=%v", requestID, totalBytes, readErr)
 			return readErr
 		}
 	}

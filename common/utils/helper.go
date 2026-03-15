@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/bwmarrin/snowflake"
 	"github.com/gin-gonic/gin"
@@ -409,4 +410,15 @@ func IsIpInCidr(ip string, cidr string) bool {
 		return false
 	}
 	return ipNet.Contains(parsedIP)
+}
+
+func ByteToStringView(b []byte, maxLen int) string {
+	if len(b) == 0 {
+		return ""
+	}
+	if maxLen >= 0 && len(b) > maxLen {
+		return unsafe.String(unsafe.SliceData(b), maxLen) + "...(truncated)"
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b))
+
 }

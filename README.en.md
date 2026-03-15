@@ -16,6 +16,8 @@ You can visit the [Tokilake Demo](https://tokilake.abrdns.com/) to explore the c
 
 - **[📚 中文使用指南](./docs/guide.zh.md)**
 - **[📖 User Guide (English)](./docs/guide.en.md)**
+- **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
+- **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 
 
 ## 🌟 Core Concept
