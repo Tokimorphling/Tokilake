@@ -5,4 +5,7 @@ const i18nList = [
   { lng: 'ja_JP', name: '日本語' }
 ];
 
+export const supportedLanguages = i18nList.map((item) => item.lng);
+export const defaultLanguage = 'zh_CN';
+
 export default i18nList;
