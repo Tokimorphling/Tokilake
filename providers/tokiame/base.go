@@ -2,12 +2,14 @@ package tokiame
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"one-api/common"
 	"one-api/common/config"
+	"one-api/common/logger"
 	"one-api/common/requester"
 	"one-api/model"
 	"one-api/providers/base"
@@ -364,7 +366,7 @@ func (p *Provider) doMultipartRequest(relayMode int, routeKind string, modelName
 }
 
 func (p *Provider) doTunnelHTTPRequest(method string, path string, routeKind string, modelName string, body []byte, contentType string, isStream bool) (*http.Response, *types.OpenAIErrorWithStatusCode) {
-	resp, _, requestErr := tokilakesvc.DoTunnelRequest(p.requestContext(), p.Channel.Id, &tokilakesvc.TunnelRequest{
+	tunnelReq := &tokilakesvc.TunnelRequest{
 		RouteKind: routeKind,
 		Method:    method,
 		Path:      path,
@@ -372,10 +374,26 @@ func (p *Provider) doTunnelHTTPRequest(method string, path string, routeKind str
 		Headers:   p.buildTunnelHeaders(path, contentType, isStream),
 		IsStream:  isStream,
 		Body:      body,
-	})
+	}
+
+	logger.SysLog("tokiame >>> sending tunnel request route_kind=" + routeKind +
+		" method=" + method +
+		" path=" + path +
+		" model=" + modelName +
+		" is_stream=" + fmt.Sprintf("%v", isStream) +
+		" body_size=" + fmt.Sprintf("%d", len(body)))
+
+	resp, requestID, requestErr := tokilakesvc.DoTunnelRequest(p.requestContext(), p.Channel.Id, tunnelReq)
 	if requestErr != nil {
+		logger.SysError("tokiame <<< tunnel request failed route_kind=" + routeKind +
+			" request_id=" + requestID +
+			" err=" + requestErr.Error())
 		return nil, common.ErrorWrapperLocal(requestErr, "tokiame_request_failed", http.StatusServiceUnavailable)
 	}
+
+	logger.SysLog("tokiame <<< tunnel response received request_id=" + requestID +
+		" status=" + fmt.Sprintf("%d", resp.StatusCode))
+
 	return resp, nil
 }
 

@@ -280,7 +280,7 @@ func (c *Client) runOnce(ctx context.Context) error {
 
 func (c *Client) register(codec *controlCodec, controlStream readDeadlineSetter) error {
 	requestID := c.nextRequestID("register")
-	if err := codec.WriteMessage(&ControlMessage{
+	registerMsg := &ControlMessage{
 		Type:      ControlMessageTypeRegister,
 		RequestID: requestID,
 		Register: &RegisterMessage{
@@ -291,15 +291,20 @@ func (c *Client) register(codec *controlCodec, controlStream readDeadlineSetter)
 			HardwareInfo: collectHardwareInfo(c.config),
 			BackendType:  c.config.ControlPlaneBackendType(),
 		},
-	}); err != nil {
+	}
+	c.debug(">>> sending register request_id=%s namespace=%s node_name=%s group=%s models=%v backend_type=%s",
+		requestID, c.config.Namespace, c.config.NodeName, c.config.Group, c.config.ModelNames(), c.config.ControlPlaneBackendType())
+	if err := codec.WriteMessage(registerMsg); err != nil {
+		c.warn("<<< send register failed request_id=%s err=%v", requestID, err)
 		return fmt.Errorf("send register: %w", err)
 	}
+	c.debug(">>> register sent successfully, waiting for ack...")
 	return c.awaitAck(codec, controlStream, requestID, "register")
 }
 
 func (c *Client) syncModels(codec *controlCodec, controlStream readDeadlineSetter) error {
 	requestID := c.nextRequestID("models")
-	if err := codec.WriteMessage(&ControlMessage{
+	modelsSyncMsg := &ControlMessage{
 		Type:      ControlMessageTypeModelsSync,
 		RequestID: requestID,
 		ModelsSync: &ModelsSyncMessage{
@@ -308,7 +313,11 @@ func (c *Client) syncModels(codec *controlCodec, controlStream readDeadlineSette
 			HardwareInfo: collectHardwareInfo(c.config),
 			BackendType:  c.config.ControlPlaneBackendType(),
 		},
-	}); err != nil {
+	}
+	c.debug(">>> sending models_sync request_id=%s namespace=%s models=%v",
+		requestID, c.config.Namespace, c.config.ModelNames())
+	if err := codec.WriteMessage(modelsSyncMsg); err != nil {
+		c.warn("<<< send models_sync failed request_id=%s err=%v", requestID, err)
 		return fmt.Errorf("send models_sync: %w", err)
 	}
 	return c.awaitAck(codec, controlStream, requestID, "models_sync")
@@ -318,25 +327,35 @@ func (c *Client) awaitAck(codec *controlCodec, controlStream readDeadlineSetter,
 	_ = controlStream.SetReadDeadline(time.Now().Add(controlAckTimeout))
 	defer controlStream.SetReadDeadline(time.Time{})
 
+	c.debug("waiting for %s ack request_id=%s", action, requestID)
 	for {
 		msg, err := codec.ReadMessage()
 		if err != nil {
+			c.warn("<<< read %s ack failed request_id=%s err=%v", action, requestID, err)
 			return fmt.Errorf("read %s ack: %w", action, err)
 		}
 		switch msg.Type {
 		case ControlMessageTypeAck:
 			if msg.RequestID != requestID {
+				c.debug("received ack for different request_id=%s (expected %s)", msg.RequestID, requestID)
 				continue
 			}
+			c.debug("<<< received %s ack request_id=%s message=%s namespace=%s worker_id=%d channel_id=%d",
+				action, msg.RequestID, firstNonEmptyString(msg.Ack.Message, "ok"), msg.Ack.Namespace, msg.Ack.WorkerID, msg.Ack.ChannelID)
 			return nil
 		case ControlMessageTypeError:
 			if msg.RequestID != requestID {
+				c.debug("received error for different request_id=%s (expected %s)", msg.RequestID, requestID)
 				continue
 			}
 			if msg.Error != nil {
+				c.warn("<<< %s rejected request_id=%s code=%s message=%s", action, requestID, msg.Error.Code, msg.Error.Message)
 				return fmt.Errorf("%s rejected: %s", action, msg.Error.Message)
 			}
+			c.warn("<<< %s rejected request_id=%s", action, requestID)
 			return fmt.Errorf("%s rejected", action)
+		default:
+			c.debug("received unexpected message type=%s while waiting for ack", msg.Type)
 		}
 	}
 }
@@ -346,8 +365,10 @@ func (c *Client) readControlLoop(ctx context.Context, codec *controlCodec, errCh
 		msg, err := codec.ReadMessage()
 		if err != nil {
 			if ctx.Err() != nil {
+				c.debug("control loop read stopped due to context cancellation")
 				return
 			}
+			c.warn("<<< read control message failed err=%v", err)
 			select {
 			case errCh <- err:
 			default:
@@ -357,11 +378,13 @@ func (c *Client) readControlLoop(ctx context.Context, codec *controlCodec, errCh
 
 		switch msg.Type {
 		case ControlMessageTypeAck:
+			c.debug("<<< received ack request_id=%s message=%s", msg.RequestID, firstNonEmptyString(msg.Ack.Message, "unknown"))
 			continue
 		case ControlMessageTypeError:
 			if msg.Error == nil {
 				continue
 			}
+			c.warn("<<< gateway error request_id=%s code=%s message=%s", msg.RequestID, msg.Error.Code, msg.Error.Message)
 			select {
 			case errCh <- fmt.Errorf("gateway error: code=%s message=%s", msg.Error.Code, msg.Error.Message):
 			default:
@@ -371,6 +394,8 @@ func (c *Client) readControlLoop(ctx context.Context, codec *controlCodec, errCh
 			if msg.CancelRequest == nil {
 				continue
 			}
+			c.info("<<< received cancel_request request_id=%s target_request_id=%s reason=%s",
+				msg.RequestID, msg.CancelRequest.TargetRequestID, firstNonEmptyString(msg.CancelRequest.Reason, "unknown"))
 			cancelled := c.cancelLocalRequest(msg.CancelRequest.TargetRequestID)
 			ackMessage := "cancel_noop"
 			if cancelled {
@@ -384,6 +409,7 @@ func (c *Client) readControlLoop(ctx context.Context, codec *controlCodec, errCh
 					Namespace: c.config.Namespace,
 				},
 			})
+			c.debug(">>> sent cancel ack request_id=%s cancelled=%v", msg.RequestID, cancelled)
 		default:
 			c.debug("ignoring unsupported control message type=%s request_id=%s", msg.Type, msg.RequestID)
 		}
@@ -394,12 +420,14 @@ func (c *Client) heartbeatLoop(ctx context.Context, codec *controlCodec, errCh c
 	ticker := time.NewTicker(c.config.HeartbeatInterval())
 	defer ticker.Stop()
 
+	c.info("heartbeat loop started interval=%s", c.config.HeartbeatInterval())
 	for {
 		select {
 		case <-ctx.Done():
+			c.debug("heartbeat loop stopped due to context cancellation")
 			return
 		case <-ticker.C:
-			err := codec.WriteMessage(&ControlMessage{
+			heartbeatMsg := &ControlMessage{
 				Type:      ControlMessageTypeHeartbeat,
 				RequestID: c.nextRequestID("heartbeat"),
 				Heartbeat: &HeartbeatMessage{
@@ -407,8 +435,12 @@ func (c *Client) heartbeatLoop(ctx context.Context, codec *controlCodec, errCh c
 					HardwareInfo:  collectHardwareInfo(c.config),
 					CurrentModels: c.config.ModelNames(),
 				},
-			})
+			}
+			c.debug(">>> sending heartbeat request_id=%s node_name=%s models=%v",
+				heartbeatMsg.RequestID, c.config.NodeName, c.config.ModelNames())
+			err := codec.WriteMessage(heartbeatMsg)
 			if err != nil {
+				c.warn("<<< send heartbeat failed request_id=%s err=%v", heartbeatMsg.RequestID, err)
 				select {
 				case errCh <- fmt.Errorf("send heartbeat: %w", err):
 				default:

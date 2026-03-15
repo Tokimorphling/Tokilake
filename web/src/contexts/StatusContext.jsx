@@ -24,7 +24,25 @@ const StatusProvider = ({ children }) => {
           delete data.chat_link;
         }
         // 设置系统默认语言
-        const storedLanguage = localStorage.getItem('appLanguage') || data.language || 'zh_CN';
+        // 优先级：用户选择 (localStorage) > 浏览器检测语言 > 服务器设置 > 默认 zh_CN
+        const userLanguage = localStorage.getItem('appLanguage');
+        const serverLanguage = data.language;
+        const detectedLanguage = i18n.language || 'zh_CN';
+        // alert(userLanguage);
+        console.log('userLanguage: %s, detecteted: %s', userLanguage, detectedLanguage);
+        // 如果用户没有手动选择语言，则使用检测到的浏览器语言或服务器设置
+        let storedLanguage;
+        if (userLanguage) {
+          storedLanguage = userLanguage;
+        } else if (detectedLanguage) {
+          // 使用检测到的浏览器语言，如果不在支持列表中则回退到 zh_CN
+          storedLanguage = detectedLanguage;
+        } else if (serverLanguage) {
+          storedLanguage = serverLanguage;
+        } else {
+          storedLanguage = 'zh_CN';
+        }
+        
         localStorage.setItem('default_language', storedLanguage);
         i18n.changeLanguage(storedLanguage);
         localStorage.setItem('siteInfo', JSON.stringify(data));

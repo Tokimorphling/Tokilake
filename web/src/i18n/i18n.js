@@ -10,9 +10,15 @@ i18n
     resources,
     fallbackLng: 'zh_CN',
     debug: false,
-    lng: 'zh_CN',
+    // 移除固定的 lng，让 LanguageDetector 自动检测浏览器语言
+    // lng: 'zh_CN',
     interpolation: {
       escapeValue: false
+    },
+    // LanguageDetector 配置
+    detection: {
+      order: ['localStorage', 'navigator', 'htmlTag'],
+      caches: ['localStorage']
     }
   });
 
