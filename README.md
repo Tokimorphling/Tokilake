@@ -41,6 +41,44 @@ SaaS 服务商提供业务端，客户提供算力端。客户只需在自己绝
 
 ## 🛠 架构设计
 
+```mermaid
+graph TB
+    subgraph Users ["🌐 API 消费者"]
+        U1["应用 / SDK"]
+        U2["curl / ChatUI"]
+    end
+
+    subgraph Gateway ["☁️ Tokilake 网关 (Hub)"]
+        GIN["Gin HTTP Server"]
+        RELAY["Relay 路由层"]
+        PROV["Tokiame Provider"]
+        SM["Session Manager"]
+        DB[("DB / Channel 表")]
+        GIN --> RELAY --> PROV
+        PROV -->|"查找 Session"| SM
+        SM -->|"读写虚拟 Channel"| DB
+    end
+
+    subgraph Tunnel ["🔒 多路复用反向隧道"]
+        direction LR
+        CTRL["控制流<br/>register / heartbeat / models_sync"]
+        DATA["数据流<br/>TunnelRequest ↔ TunnelResponse"]
+    end
+
+    subgraph Workers ["🖥️ Tokiame 边缘节点 (NAT 内网)"]
+        W1["Tokiame 客户端 A"]
+        W2["Tokiame 客户端 B"]
+        B1["Ollama / vLLM<br/>本地 GPU"]
+        B2["SGLang / ComfyUI<br/>本地 GPU"]
+        W1 --> B1
+        W2 --> B2
+    end
+
+    U1 & U2 -->|"标准 OpenAI HTTP API"| GIN
+    PROV <-->|"多路复用隧道"| Tunnel
+    Tunnel <-->|"主动出站连接"| W1 & W2
+```
+
 - **`Tokilake` (网关/Hub级别)**: 统一的流量入口。接收用户的标准 HTTP API 请求，并将其多路复用到对应的边缘节点。
 - **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 `xtaci/smux` 多路复用协议维持极低延迟的 WebSocket 反向隧道。
 

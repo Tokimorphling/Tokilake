@@ -42,6 +42,44 @@ Built around native **Private Group** and **Invite Code** mechanisms. User A hoo
 
 ## 🛠 Architecture Design
 
+```mermaid
+graph TB
+    subgraph Users ["🌐 API Consumers"]
+        U1["Apps / SDKs"]
+        U2["curl / ChatUI"]
+    end
+
+    subgraph Gateway ["☁️ Tokilake Gateway (Hub)"]
+        GIN["Gin HTTP Server"]
+        RELAY["Relay Router"]
+        PROV["Tokiame Provider"]
+        SM["Session Manager"]
+        DB[("DB / Channel Table")]
+        GIN --> RELAY --> PROV
+        PROV -->|"Lookup Session"| SM
+        SM -->|"R/W Virtual Channel"| DB
+    end
+
+    subgraph Tunnel ["🔒 Multiplexed Reverse Tunnel"]
+        direction LR
+        CTRL["Control Stream<br/>register / heartbeat / models_sync"]
+        DATA["Data Streams<br/>TunnelRequest ↔ TunnelResponse"]
+    end
+
+    subgraph Workers ["🖥️ Tokiame Edge Nodes (Behind NAT)"]
+        W1["Tokiame Client A"]
+        W2["Tokiame Client B"]
+        B1["Ollama / vLLM<br/>Local GPU"]
+        B2["SGLang / ComfyUI<br/>Local GPU"]
+        W1 --> B1
+        W2 --> B2
+    end
+
+    U1 & U2 -->|"Standard OpenAI HTTP API"| GIN
+    PROV <-->|"Multiplexed Tunnel"| Tunnel
+    Tunnel <-->|"Outbound-Only Connection"| W1 & W2
+```
+
 - **`Tokilake` (Gateway/Hub Level)**: The unified ingress for traffic. It receives standard HTTP API requests from end-users and multiplexes them to the corresponding edge nodes.
 - **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse WebSocket tunnel via the `xtaci/smux` multiplexing protocol.
 
