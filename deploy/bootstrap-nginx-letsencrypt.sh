@@ -356,8 +356,26 @@ server {
 }
 EOF
 
-nginx -t
-systemctl reload nginx
+quic_update_script="${repo_root}/deploy/bootstrap-nginx-letsencrypt-quic-update.sh"
+if [ ! -f "$quic_update_script" ]; then
+  echo "quic update script not found: $quic_update_script" >&2
+  exit 1
+fi
+
+quic_args=(
+  --domain "$domain"
+  --app-dir "$app_dir"
+  --container-name "$container_name"
+  --port "$listen_port"
+  --image "$image"
+  --tz "$timezone_value"
+)
+
+if [ "$skip_package_install" = "true" ]; then
+  quic_args+=(--skip-package-install)
+fi
+
+bash "$quic_update_script" "${quic_args[@]}"
 
 echo
 echo "Tokilake deployment completed."
@@ -366,6 +384,7 @@ echo "Image: ${image}"
 echo "Container: ${container_name}"
 echo "Config: ${config_dest}"
 echo "Data dir: ${data_dir}"
+echo "QUIC: enabled on 443/udp via nginx stream proxy"
 echo
 echo "Generated secrets were persisted into the config file if placeholders were present."
 echo "Existing secrets were preserved."

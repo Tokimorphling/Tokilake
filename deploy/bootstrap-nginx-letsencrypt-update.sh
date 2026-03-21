@@ -6,12 +6,13 @@ domain=""
 email=""
 app_dir="/opt/tokilake"
 config_source=""
-image="ghcr.io/tokimorphling/tokilake:latest"
+image=""
 container_name="tokilake"
 listen_port="19981"
 skip_package_install="false"
 timezone_value="UTC"
 user_token_secret=""
+timezone_explicit="false"
 
 usage() {
   cat <<'EOF'
@@ -23,17 +24,18 @@ Options:
   --email <email>                Let's Encrypt registration email, required for CLI compatibility
   --app-dir <dir>                Install root, default /opt/tokilake
   --config <path>                Accepted for CLI compatibility, not used during update
-  --image <image>                Tokilake image, default ghcr.io/tokimorphling/tokilake:latest
+  --image <image>                Docker image override; defaults to current container image if omitted
   --container-name <name>        Docker container name, default tokilake
   --port <port>                  Tokilake listen port, default 19981
-  --tz <timezone>                Container timezone env, default UTC
+  --tz <timezone>                Container timezone env; defaults to current container TZ if omitted
   --user-token-secret <secret>   Accepted for CLI compatibility, not used during update
-  --skip-package-install         Accepted for CLI compatibility, not used during update
+  --skip-package-install         Skip apt package installation for nginx stream support
   --help                         Show this help
 
 Behavior:
-  - Only pulls the Docker image and recreates the Tokilake container
-  - Does not install packages, modify nginx, request certificates, or rewrite config files
+  - Recreates the Tokilake container
+  - Preserves or updates QUIC nginx stream proxy configuration
+  - Re-enables container QUIC bindings and certificate mounts
 EOF
 }
 
@@ -69,6 +71,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --tz)
       timezone_value="${2:-}"
+      timezone_explicit="true"
       shift 2
       ;;
     --user-token-secret)
@@ -101,38 +104,32 @@ if [ -z "$domain" ] || [ -z "$email" ]; then
   exit 1
 fi
 
-config_dest="${app_dir}/config/config.yaml"
-data_dir="${app_dir}/data"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+quic_update_script="${repo_root}/deploy/bootstrap-nginx-letsencrypt-quic-update.sh"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "required command not found: docker" >&2
+if [ ! -f "$quic_update_script" ]; then
+  echo "quic update script not found: $quic_update_script" >&2
   exit 1
 fi
 
-if [ ! -f "$config_dest" ]; then
-  echo "runtime config not found: $config_dest" >&2
-  exit 1
+args=(
+  --domain "$domain"
+  --app-dir "$app_dir"
+  --container-name "$container_name"
+  --port "$listen_port"
+  --pull
+)
+
+if [ -n "$image" ]; then
+  args+=(--image "$image")
 fi
 
-docker pull "$image"
-docker rm -f "$container_name" >/dev/null 2>&1 || true
+if [ "$timezone_explicit" = "true" ]; then
+  args+=(--tz "$timezone_value")
+fi
 
-docker run -d \
-  --name "$container_name" \
-  --restart always \
-  -p "127.0.0.1:${listen_port}:${listen_port}" \
-  -e TZ="$timezone_value" \
-  -v "${config_dest}:/data/config.yaml:ro" \
-  -v "${data_dir}:/data" \
-  "$image"
+if [ "$skip_package_install" = "true" ]; then
+  args+=(--skip-package-install)
+fi
 
-echo
-echo "Tokilake image update completed."
-echo "Image: ${image}"
-echo "Container: ${container_name}"
-echo "Config: ${config_dest}"
-echo "Data dir: ${data_dir}"
-echo
-echo "Recommended next checks:"
-echo "  docker ps --filter name=${container_name}"
-echo "  docker logs ${container_name} --tail 100"
+exec bash "$quic_update_script" "${args[@]}"

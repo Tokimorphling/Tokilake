@@ -1,120 +1,130 @@
-# Deploy Templates
+# Deploy
 
-This directory contains production deployment templates for Tokilake.
+当前目录保留了多种历史部署材料，但默认推荐只使用下面这套主路径。
 
-- `tokilake.service`: `systemd` unit template for running the backend on port `19981`
-- `nginx.tokilake.conf`: `nginx` reverse proxy template with TLS termination, WebSocket upgrade, and streaming-friendly defaults
-- `nginx.stream.tokilake.conf`: `nginx stream` TCP proxy example with PROXY protocol
-- `config.local-test.yaml`: local single-machine template with direct access and proxy trust disabled
-- `config.production-nginx.yaml`: production template for Tokilake behind nginx on port `19981`
-- `bootstrap-nginx-letsencrypt.sh`: one-shot bootstrap script for Debian/Ubuntu, Docker, nginx, and Let's Encrypt
-- `docker-compose.nginx.yaml`: compose stack for `nginx + tokilake + postgres + redis`
-- `docker-compose.nginx-letsencrypt.yaml`: compose stack for `nginx + tokilake + postgres + redis + certbot`
-- `config.compose-nginx.yaml`: Tokilake config template for the compose stack
-- `nginx.compose.http.conf.template`: nginx template rendered inside the compose nginx container
-- `nginx.compose.acme.conf.template`: temporary nginx config for HTTP-01 certificate issuance
-- `nginx.compose.https.conf.template`: nginx config for HTTPS termination inside Docker
-- `.env.compose.example`: example environment file for the compose stack
-- `bootstrap-docker-compose.sh`: one-shot compose bootstrap that generates secrets and runs `docker compose up -d`
-- `.env.compose.letsencrypt.example`: example env file for the Let's Encrypt compose stack
-- `bootstrap-docker-compose-letsencrypt.sh`: one-shot compose bootstrap for Dockerized nginx + certbot
+## 推荐路径
 
-Runtime application configuration remains in:
+适用场景：
 
-- `/opt/tokilake/config/config.yaml` on the target host for the Docker bootstrap flow
-- [dist/config.yaml](../dist/config.yaml) in this repository
-- `deploy/runtime/config/config.yaml` for the compose bootstrap flow
+- 单机部署
+- 宿主机运行 `nginx`
+- Tokilake 运行在 Docker 容器内
+- `nginx` 负责 TLS 终止
+- Tokiame 默认使用 `auto`，优先走 QUIC，失败回退 WebSocket
 
-Before use, replace the placeholder values in these files:
+推荐只关注这几个文件：
 
-- `api.example.com`
-- Linux user/group names
-- installation paths such as `/opt/tokilake`
-- certificate paths
+- `bootstrap-nginx-letsencrypt.sh`
+  - 首次部署入口
+  - 安装/检查 `nginx`、`certbot`、`docker`
+  - 初始化 `/opt/tokilake/config/config.yaml`
+  - 申请 Let's Encrypt 证书
+  - 启动 Tokilake 容器
+  - 自动补齐 QUIC 所需的 nginx UDP 转发、容器 UDP 端口映射、证书挂载
+- `bootstrap-nginx-letsencrypt-update.sh`
+  - 日常更新入口
+  - 重新拉取镜像并重建容器
+  - 保持 QUIC/nginx 配置不丢失
+- `bootstrap-nginx-letsencrypt-quic-update.sh`
+  - QUIC 修复/补齐脚本
+  - 通常由上面两个脚本自动调用
+  - 也可以在只想修 QUIC 配置时单独执行
+- `config.production-nginx.yaml`
+  - 宿主机 `nginx + docker` 形态的默认配置模板
 
-Recommended production shape:
-
-1. Run Tokilake on `127.0.0.1` or host-local port `19981`
-2. Terminate HTTPS at `nginx` or another reverse proxy
-3. Keep port `19981` closed from the public internet via firewall or security group
-
-Real IP notes:
-
-- HTTP reverse proxy: set `trusted_proxies` to your nginx/LB source IP range, then Tokilake will trust `X-Forwarded-For` / `X-Real-IP`
-- TCP or `stream` proxy: set `proxy_protocol_enabled: true` and enable `proxy_protocol on;` on the upstream hop
-- `trusted_proxies: "none"` means "trust no proxy headers"
-
-One-shot bootstrap example:
+## 首次部署
 
 ```bash
 sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
   --domain api.example.com \
   --email admin@example.com \
-  --image ghcr.io/tokimorphling/tokilake:latest \
   --config ./deploy/config.production-nginx.yaml
 ```
 
-Before running it:
+如果你有自定义配置文件，也可以直接替换 `--config`。
 
-- make sure your DNS A/AAAA record already points to this server
-- keep ports `80` and `443` reachable from the public internet during certificate issuance
-- the script will persist `USER_TOKEN_SECRET` and `SESSION_SECRET` into the host config file on first run if placeholders are still present
-- on first bootstrap, if `hashids_salt` is empty, the script will generate a valid random sqids alphabet and persist it; reruns preserve the existing value
-- if you set `hashids_salt` manually, it must be ASCII, unique characters only, length >= 3
-- if `docker` already exists on the host, the bootstrap script will not install `docker.io` again
-- when using `--skip-package-install`, `docker`, `nginx`, `certbot`, `systemctl`, and `python3` must already be installed
-- the bootstrap script supports both Debian-style `sites-available/sites-enabled` and `conf.d` nginx layouts
+前置条件：
 
-Compose bootstrap example:
+- DNS 已指向当前机器
+- 公网已放行 `80/tcp`、`443/tcp`、`443/udp`
+- 宿主机 `dpkg/apt` 状态正常
+- 如果不是默认值，要显式传入：
+  - `--app-dir`
+  - `--container-name`
+  - `--port`
 
-```bash
-./deploy/bootstrap-docker-compose.sh \
-  --domain localhost \
-  --scheme http \
-  --http-port 8080
-```
+部署完成后，Tokilake 会使用：
 
-This will:
+- `443/tcp` 提供 HTTPS / WebSocket
+- `443/udp` 提供 QUIC
+- 容器内 `19981/tcp` 和 `19981/udp` 提供后端接入
 
-- create `deploy/runtime/` for config and data
-- generate `USER_TOKEN_SECRET`, `SESSION_SECRET`, a valid random sqids alphabet, and a Postgres password if placeholders are still present
-- write compose env values to `deploy/.env.compose`
-- start `postgres`, `redis`, `tokilake`, and `nginx`
-- run `nginx` inside Docker as part of the compose stack, not on the host
-
-Direct compose usage:
+## 后续更新
 
 ```bash
-mkdir -p ./deploy/runtime/config
-cp ./deploy/.env.compose.example ./deploy/.env.compose
-cp ./deploy/config.compose-nginx.yaml ./deploy/runtime/config/config.yaml
-docker compose --env-file ./deploy/.env.compose -f ./deploy/docker-compose.nginx.yaml up -d
-```
-
-Notes for the compose stack:
-
-- it publishes nginx on HTTP only by default
-- `tokilake` is not published directly; nginx talks to it over the internal compose network
-- if you later add TLS in front of nginx, update `server_address` in `deploy/runtime/config/config.yaml` to the final external `https://...` address
-
-Compose + Let's Encrypt bootstrap example:
-
-```bash
-./deploy/bootstrap-docker-compose-letsencrypt.sh \
+sudo ./deploy/bootstrap-nginx-letsencrypt-update.sh \
   --domain api.example.com \
   --email admin@example.com
 ```
 
-This TLS stack:
+这个脚本现在不是“只更新容器”的旧行为了。它会同时确保：
 
-- runs `nginx` inside Docker and publishes both `80` and `443`
-- uses a Dockerized `certbot` container for initial HTTP-01 issuance
-- starts a long-running `certbot-renew` container for periodic renewal
-- keeps certificates in `deploy/runtime-letsencrypt/letsencrypt`
-- reloads `nginx` periodically so renewed certificates are picked up without manual intervention
+- 镜像更新后容器仍然挂载 Let's Encrypt 证书
+- 容器仍然暴露 UDP 端口
+- `nginx stream` 的 `443/udp` 转发仍然存在
+- Tokilake 的 QUIC 环境变量仍然存在
 
-Before using the Let's Encrypt stack:
+## QUIC 单独修复
 
-- make sure `api.example.com` already resolves to this machine
-- keep ports `80` and `443` reachable from the public internet
-- use `--staging` first if you want to validate the flow without consuming production rate limits
+如果你的 HTTP/HTTPS 已经正常，只是后来切到 QUIC 才发现：
+
+- AWS Security Group 没开 `443/udp`
+- `nginx` 没监听 `443/udp`
+- 容器没映射 `19981/udp`
+- 容器没挂载 `/etc/letsencrypt`
+
+可以单独执行：
+
+```bash
+sudo ./deploy/bootstrap-nginx-letsencrypt-quic-update.sh \
+  --domain api.example.com
+```
+
+## 推荐验证
+
+先验证证书：
+
+```bash
+openssl s_client -connect api.example.com:443 -servername api.example.com </dev/null | \
+  openssl x509 -noout -subject -issuer -ext subjectAltName
+```
+
+再验证 worker：
+
+```bash
+./tokiame -c tokiame.json
+```
+
+如果日志里出现下面这行，说明 QUIC 已经打通：
+
+```text
+worker connected transport=quic
+```
+
+## 其他文件
+
+下面这些文件暂时保留，但不作为默认推荐路径：
+
+- `bootstrap-docker-compose.sh`
+- `bootstrap-docker-compose-letsencrypt.sh`
+- `docker-compose.nginx.yaml`
+- `docker-compose.nginx-letsencrypt.yaml`
+- `config.compose-nginx.yaml`
+- `nginx.compose.http.conf.template`
+- `nginx.compose.acme.conf.template`
+- `nginx.compose.https.conf.template`
+- `nginx.stream.tokilake.conf`
+- `tokilake.service`
+- `config.local-test.yaml`
+
+它们更适合历史兼容、实验、compose 化部署、或特定运维场景。默认部署请优先走上面的宿主机 `nginx + docker + Let's Encrypt + QUIC` 方案。
