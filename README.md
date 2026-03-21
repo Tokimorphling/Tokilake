@@ -1,101 +1,102 @@
 <p align="right">
-   <strong>中文</strong> | <a href="./README.en.md">English</a>
+   <strong>English</strong> | <a href="./README.zh-CN.md">中文</a>
 </p>
 
 # Tokilake & Tokiame
 
 > **Control your own GPUs like OpenRouter.**
 
-Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关。它彻底翻转了传统的 API 网关模型：不再局限于网关主动请求有公网 IP 的服务器，而是**允许任意位于 NAT/内网之后的 GPU 工作节点（Tokiame）通过 WebSocket 反向隧道主动接入中心网关（Hub）**。
+Tokilake is a decentralized Large Language Model (LLM) API scheduling gateway built on the One-API ecosystem. It completely flips the traditional API gateway model: instead of the gateway strictly acting as a client that actively requests servers with public IPs, it **allows any GPU worker node (Tokiame) located behind NAT/Intranets to actively connect to the central gateway (Hub) via a reverse WebSocket tunnel**.
 
-> **Tokilake** 基于 [MartialBE/one-hub](https://github.com/MartialBE/one-hub) 以及后续的 One-API 生态分支持续演进而来。
+> **Tokilake** is built on top of [MartialBE/one-hub](https://github.com/MartialBE/one-hub) and the broader One-API ecosystem that evolved around it.
 
-## 📖 快速开始 / Quick Start
+## 📖 Quick Start
 
-你可以通过 [Tokilake Demo](https://tokilake.abrdns.com/) 快速体验核心功能。为了确保数据的绝对安全与分发的完全自主，我们强烈建议你参考**端到端部署指南**自行托管。无论你是初次体验还是准备深度部署，下方的文档都将为你提供完整指引。
+You can visit the [Tokilake Demo](https://tokilake.abrdns.com/) to explore the core features. For total data privacy and distribution control, we highly recommend self-hosting following our **End-to-End Deployment Guide**. Whether you're a first-time user or ready for a full deployment, the guides below are here to help.
 
 - **[📚 中文使用指南](./docs/guide.zh.md)**
 - **[📖 User Guide (English)](./docs/guide.en.md)**
-- **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 - **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
+- **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 
-## 🌟 核心理念
 
-传统的 API 代理通常作为 Client，将请求路由到拥有公网 IP 地址的 Server。如果你的高算力显卡（如 RTX 4090）躺在家里的局域网内，或者散布在不同云厂商的临时竞价实例（Spot Instances）上，将其统一成稳定可用的 API 极具挑战。
+## 🌟 Core Concept
 
-**Tokiame** 改变了这一切。它作为一个轻量级守护进程，主动“拨号”连接到云端的 **Tokilake** 网关。连接成功后，Tokilake 会在系统内部将其无缝映射为一个标准的 `Channel`（渠道）。这意味着，**你无需任何内网穿透工具（如 FRP/Ngrok），就可以享受网关自带的企业级负载均衡、高并发削峰、鉴权与计费链路。**
+Traditional API proxies typically act as clients, routing requests to servers with public IP addresses. If your high-performance GPUs (like an RTX 4090) are sitting quietly on a local home network, or scattered across temporary Spot Instances from various cloud providers, unifying them into a stable, accessible API is a major challenge.
 
-## 🚀 完美适配的场景
+**Tokiame** changes the game. Operating as a lightweight daemon, it actively "dials out" to connect to the cloud-based **Tokilake** gateway. Upon a successful connection, Tokilake seamlessly maps the worker internally to a standard `Channel`. This means **you don't need any tricky intranet penetration tools (like FRP or Ngrok). You get to enjoy the gateway's enterprise-grade load balancing, high-concurrency traffic shaping, authentication, and billing systems right out of the box.**
 
-### 1. 个人与工作室的分布式 GPU 池化（穿透 NAT）
-针对只有内网 IP 的家庭宽带或校园网环境。只需在本地运行 Tokiame 进程，立刻与云端网关打通隧道。你本地使用 Ollama / vLLM 部署的大语言模型，瞬间即可安全地对外提供标准的 OpenAI API 服务。
+## 🚀 Perfect Use Cases
 
-### 2. 跨云/多节点混合部署 (Hybrid Cloud Orchestration)
-在不同算力平台（如 AWS, 阿里云, AutoDL, RunPod）购买了零散的 GPU 实例？不需要复杂的 SD-WAN 组网。新开实例只需附带启动 Tokiame，它便会自动注册进负载池；实例被销毁或关机时，心跳机制会自动将该节点安全下线，极大降低了运维成本。
+### 1. Distributed GPU Pooling for Individuals & Studios (NAT Penetration)
+Tailor-made for home broadband or campus network environments without public IPs. Just run the Tokiame process locally, and it instantly establishes a tunnel with the cloud gateway. The LLMs you deploy locally using Ollama or vLLM can instantly and securely provide standard OpenAI-compatible API services to the outside world.
 
-### 3. 企业级数据隐私与“自带模型” (BYOM)
-SaaS 服务商提供业务端，客户提供算力端。客户只需在自己绝对安全的私有机房内部署 Tokiame，单向连接到 SaaS 的网关。客户机房**不暴露任何入站（Inbound）端口**，即可完成业务对私有大模型的调度调用，满足极其严苛的安全审计要求。
+### 2. Hybrid Cloud Orchestration
+Purchased scattered GPU instances across different compute platforms (e.g., AWS, AliCloud, AutoDL, RunPod)? Skip the complex SD-WAN setups. Simply attach the Tokiame startup script to your new instances, and they automatically register into the load-balancing pool. When instances are destroyed or shut down, the heartbeat mechanism safely takes the node offline, drastically reducing DevOps overhead.
 
-### 4. 社区算力互助与 C2C 算力交易
-基于内置的 **私有分组 (Private Group)** 和 **邀请码 (Invite Code)** 机制。用户 A 接入自己的算力节点，并生成一枚邀请码；用户 B 兑换邀请码后即可进入 A 的私有多租户环境调用算力，网关负责统一计费与鉴权，轻松搭建起你自己的 "OpenRouter"。
+### 3. Enterprise Data Privacy & "Bring Your Own Model" (BYOM)
+SaaS providers handle the business logic frontend, while clients provide the compute backend. Clients only need to deploy Tokiame within their highly secure private server rooms, initiating a one-way outbound connection to the SaaS gateway. The client's server room **exposes absolutely zero inbound ports**, yet perfectly completes the business scheduling of private models, satisfying the most stringent security audit requirements.
 
-## 🛠 架构设计
+### 4. Community Compute Sharing & C2C API Trading
+Built around native **Private Group** and **Invite Code** mechanisms. User A hooks up their compute node and generates an invite code; User B redeems the code, gains access to User A's private multi-tenant environment, and invokes the compute power. The gateway handles all centralized billing and authentication, making it effortless to build your very own "OpenRouter."
+
+## 🛠 Architecture Design
 
 ```mermaid
 graph TB
-    subgraph Users ["🌐 API 消费者"]
-        U1["应用 / SDK"]
+    subgraph Users ["🌐 API Consumers"]
+        U1["Apps / SDKs"]
         U2["curl / ChatUI"]
     end
 
-    subgraph Gateway ["☁️ Tokilake 网关 (Hub)"]
+    subgraph Gateway ["☁️ Tokilake Gateway (Hub)"]
         GIN["Gin HTTP Server"]
-        RELAY["Relay 路由层"]
+        RELAY["Relay Router"]
         PROV["Tokiame Provider"]
         SM["Session Manager"]
-        DB[("DB / Channel 表")]
+        DB[("DB / Channel Table")]
         GIN --> RELAY --> PROV
-        PROV -->|"查找 Session"| SM
-        SM -->|"读写虚拟 Channel"| DB
+        PROV -->|"Lookup Session"| SM
+        SM -->|"R/W Virtual Channel"| DB
     end
 
-    subgraph Tunnel ["🔒 多路复用反向隧道"]
+    subgraph Tunnel ["🔒 Multiplexed Reverse Tunnel"]
         direction LR
-        CTRL["控制流<br/>register / heartbeat / models_sync"]
-        DATA["数据流<br/>TunnelRequest ↔ TunnelResponse"]
+        CTRL["Control Stream<br/>register / heartbeat / models_sync"]
+        DATA["Data Streams<br/>TunnelRequest ↔ TunnelResponse"]
     end
 
-    subgraph Workers ["🖥️ Tokiame 边缘节点 (NAT 内网)"]
-        W1["Tokiame 客户端 A"]
-        W2["Tokiame 客户端 B"]
-        B1["Ollama / vLLM<br/>本地 GPU"]
-        B2["SGLang / ComfyUI<br/>本地 GPU"]
+    subgraph Workers ["🖥️ Tokiame Edge Nodes (Behind NAT)"]
+        W1["Tokiame Client A"]
+        W2["Tokiame Client B"]
+        B1["Ollama / vLLM<br/>Local GPU"]
+        B2["SGLang / ComfyUI<br/>Local GPU"]
         W1 --> B1
         W2 --> B2
     end
 
-    U1 & U2 -->|"标准 OpenAI HTTP API"| GIN
-    PROV <-->|"多路复用隧道"| Tunnel
-    Tunnel <-->|"主动出站连接"| W1 & W2
+    U1 & U2 -->|"Standard OpenAI HTTP API"| GIN
+    PROV <-->|"Multiplexed Tunnel"| Tunnel
+    Tunnel <-->|"Outbound-Only Connection"| W1 & W2
 ```
 
-- **`Tokilake` (网关/Hub级别)**: 统一的流量入口。接收用户的标准 HTTP API 请求，并将其多路复用到对应的边缘节点。
-- **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 `xtaci/smux` 多路复用协议维持极低延迟的 WebSocket 反向隧道。
+- **`Tokilake` (Gateway/Hub Level)**: The unified ingress for traffic. It receives standard HTTP API requests from end-users and multiplexes them to the corresponding edge nodes.
+- **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse WebSocket tunnel via the `xtaci/smux` multiplexing protocol.
 
-### 简明工作流
-1. `Tokiame` 客户端使用标准的用户 API 令牌向 `Tokilake` 发起 WebSocket 连接请求。
-2. 网关验证通过后，自动在数据库中为其生成/绑定一个 `type=100` 的虚拟 `Channel`，并划入特定的私有分组。
-3. 当用户通过网关发起大模型 HTTP 请求，网关就像处理普通渠道一样，将其透明地通过 `smux` 隧道流式推送给边缘层节点处理。
-4. 基于实时的心跳保活。一旦边缘节点断网离线，网关将其虚拟 Channel 自动禁用摘流，实现零感知的故障转移 (Failover)。
+### Simplified Workflow
+1. The `Tokiame` client initiates a WebSocket connection request to `Tokilake` using a standard user API token.
+2. Upon successful gateway verification, it automatically creates/binds a virtual `Channel` (`type=100`) in the database and assigns it to a specific Private Group.
+3. When a user sends an LLM HTTP request through the gateway, the gateway treats it like any normal channel, transparently streaming it to the edge node for processing via the `smux` tunnel.
+4. Relies on real-time heartbeat keepalives. If an edge node loses its connection, the gateway automatically disables its virtual Channel, achieving zero-downtime Failover.
 
-## 致谢
+## Acknowledgements
 
-- [songquanpeng/one-api](https://github.com/songquanpeng/one-api): 本项目的基础架构来源。
-- [Calcium-Ion/new-api](https://github.com/Calcium-Ion/new-api): 部分供应商接入与异步任务思路参考。
-- [codedthemes/berry-free-react-admin-template](https://github.com/codedthemes/berry-free-react-admin-template): 前端管理台视觉基础。
-- [minimal-ui-kit/material-kit-react](https://github.com/minimal-ui-kit/material-kit-react): 部分界面样式参考。
-- [zeromicro/go-zero](https://github.com/zeromicro/go-zero): 限流器等实现参考。
+- [songquanpeng/one-api](https://github.com/songquanpeng/one-api): the architectural foundation of this project.
+- [Calcium-Ion/new-api](https://github.com/Calcium-Ion/new-api): reference for some provider integrations and async task patterns.
+- [codedthemes/berry-free-react-admin-template](https://github.com/codedthemes/berry-free-react-admin-template): visual base for the admin frontend.
+- [minimal-ui-kit/material-kit-react](https://github.com/minimal-ui-kit/material-kit-react): reference for parts of the UI styling.
+- [zeromicro/go-zero](https://github.com/zeromicro/go-zero): reference for rate limiting and related implementations.
 
 ## Legacy README
 
-[旧版 README（历史介绍与兼容内容）](./README.legacy.md)
+[Legacy README (historical introduction and compatibility notes)](./README.en.legacy.md)
