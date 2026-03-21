@@ -58,11 +58,27 @@ func ExtractConnectToken(r *http.Request) (string, error) {
 	if key == "" {
 		return "", errors.New("missing authorization token")
 	}
-	key = strings.TrimPrefix(key, "sk-")
+	key = strings.TrimSpace(strings.TrimPrefix(key, "sk-"))
 	if key == "" {
 		return "", errors.New("missing authorization token")
 	}
 	return key, nil
+}
+
+func AuthenticateTokenKey(tokenKey string) (string, *model.Token, error) {
+	tokenKey = strings.TrimSpace(tokenKey)
+	if strings.HasPrefix(strings.ToLower(tokenKey), "bearer ") {
+		tokenKey = strings.TrimSpace(tokenKey[7:])
+	}
+	tokenKey = strings.TrimSpace(strings.TrimPrefix(tokenKey, "sk-"))
+	if tokenKey == "" {
+		return "", nil, errors.New("missing authorization token")
+	}
+	token, err := model.ValidateUserToken(tokenKey)
+	if err != nil {
+		return "", nil, err
+	}
+	return tokenKey, token, nil
 }
 
 func AuthenticateConnectRequest(r *http.Request) (string, *model.Token, error) {
@@ -70,11 +86,7 @@ func AuthenticateConnectRequest(r *http.Request) (string, *model.Token, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	token, err := model.ValidateUserToken(tokenKey)
-	if err != nil {
-		return "", nil, err
-	}
-	return tokenKey, token, nil
+	return AuthenticateTokenKey(tokenKey)
 }
 
 func HandleGatewayConnection(ctx context.Context, wsConn *websocket.Conn, token *model.Token, tokenKey string, remoteAddr string) error {
@@ -88,19 +100,28 @@ func HandleGatewayConnection(ctx context.Context, wsConn *websocket.Conn, token 
 	}
 
 	manager := GetSessionManager()
-	session := manager.NewGatewaySession(token, tokenKey, remoteAddr, smuxSession)
+	session := manager.NewGatewaySession(token, tokenKey, remoteAddr, TunnelTransportWebSocket, newSMuxTunnelSession(smuxSession))
 	defer func() {
 		if cleanupErr := cleanupGatewaySession(session); cleanupErr != nil {
 			logger.SysError(fmt.Sprintf("tokilake cleanup failed: session_id=%d err=%v", session.ID, cleanupErr))
 		}
 	}()
 
-	smuxSession.SetDeadline(time.Now().Add(registerTimeout))
-	controlStream, err := smuxSession.AcceptStream()
+	return serveGatewaySession(ctx, manager, session)
+}
+
+func serveGatewaySession(ctx context.Context, manager *SessionManager, session *GatewaySession) error {
+	if session == nil || session.Tunnel == nil {
+		return errors.New("tunnel session is unavailable")
+	}
+
+	controlCtx, cancel := context.WithTimeout(ctx, registerTimeout)
+	defer cancel()
+
+	controlStream, err := session.Tunnel.AcceptStream(controlCtx)
 	if err != nil {
 		return fmt.Errorf("accept control stream: %w", err)
 	}
-	smuxSession.SetDeadline(time.Time{})
 
 	codec := newControlCodec(controlStream)
 	session.Control = controlStream
@@ -108,9 +129,9 @@ func HandleGatewayConnection(ctx context.Context, wsConn *websocket.Conn, token 
 	return serveControlStream(ctx, manager, session, controlStream, codec)
 }
 
-func serveControlStream(ctx context.Context, manager *SessionManager, session *GatewaySession, controlStream ioReadWriteDeadlineCloser, codec *controlCodec) error {
+func serveControlStream(ctx context.Context, manager *SessionManager, session *GatewaySession, controlStream TunnelStream, codec *controlCodec) error {
 	for {
-		if session.WorkerID == 0 {
+		if !session.Authenticated || session.WorkerID == 0 {
 			_ = controlStream.SetReadDeadline(time.Now().Add(registerTimeout))
 		} else {
 			_ = controlStream.SetReadDeadline(time.Now().Add(heartbeatTimeout))
@@ -128,7 +149,45 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 		}
 
 		switch msg.Type {
+		case ControlMessageTypeAuth:
+			if session.Authenticated {
+				if writeErr := writeControlError(codec, msg.RequestID, "auth_already_completed", "auth message already handled"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("duplicate auth message")
+			}
+			if msg.Auth == nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "auth_payload_missing", "auth payload is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("auth payload is required")
+			}
+			tokenKey, token, authErr := AuthenticateTokenKey(msg.Auth.Token)
+			if authErr != nil {
+				if writeErr := writeControlError(codec, msg.RequestID, "auth_failed", authErr.Error()); writeErr != nil {
+					return writeErr
+				}
+				return authErr
+			}
+			session.Token = token
+			session.TokenKey = tokenKey
+			session.Authenticated = true
+			if writeErr := codec.WriteMessage(&ControlMessage{
+				Type:      ControlMessageTypeAck,
+				RequestID: msg.RequestID,
+				Ack: &AckMessage{
+					Message: "auth_ok",
+				},
+			}); writeErr != nil {
+				return writeErr
+			}
 		case ControlMessageTypeRegister:
+			if !session.Authenticated {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_authenticated", "authentication is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("register received before auth")
+			}
 			if session.WorkerID != 0 {
 				if writeErr := writeControlError(codec, msg.RequestID, "register_already_completed", "register message already handled"); writeErr != nil {
 					return writeErr
@@ -161,6 +220,12 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 				return writeErr
 			}
 		case ControlMessageTypeHeartbeat:
+			if !session.Authenticated {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_authenticated", "authentication is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("heartbeat received before auth")
+			}
 			if session.WorkerID == 0 {
 				if writeErr := writeControlError(codec, msg.RequestID, "not_registered", "register is required before heartbeat"); writeErr != nil {
 					return writeErr
@@ -192,6 +257,12 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 				return writeErr
 			}
 		case ControlMessageTypeModelsSync:
+			if !session.Authenticated {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_authenticated", "authentication is required"); writeErr != nil {
+					return writeErr
+				}
+				return errors.New("models_sync received before auth")
+			}
 			if session.WorkerID == 0 {
 				if writeErr := writeControlError(codec, msg.RequestID, "not_registered", "register is required before models_sync"); writeErr != nil {
 					return writeErr
@@ -226,9 +297,15 @@ func serveControlStream(ctx context.Context, manager *SessionManager, session *G
 			continue
 		case ControlMessageTypeError:
 			if msg.Error != nil {
-				logger.SysLog(fmt.Sprintf("tokiame reported error: namespace=%s code=%s message=%s", session.Namespace, msg.Error.Code, msg.Error.Message))
+				logger.SysLog(fmt.Sprintf("tokiame reported error: namespace=%s transport=%s code=%s message=%s", session.Namespace, session.Transport, msg.Error.Code, msg.Error.Message))
 			}
 		default:
+			if !session.Authenticated {
+				if writeErr := writeControlError(codec, msg.RequestID, "not_authenticated", "authentication is required"); writeErr != nil {
+					return writeErr
+				}
+				return fmt.Errorf("unsupported unauthenticated control message type: %s", msg.Type)
+			}
 			if writeErr := writeControlError(codec, msg.RequestID, "unsupported_message_type", fmt.Sprintf("unsupported message type: %s", msg.Type)); writeErr != nil {
 				return writeErr
 			}
@@ -790,11 +867,4 @@ func tokiameChannelName(namespace string, nodeName string) string {
 
 func tokiameChannelBaseURL(namespace string) string {
 	return fmt.Sprintf("tokiame://%s", strings.TrimSpace(namespace))
-}
-
-type ioReadWriteDeadlineCloser interface {
-	Read(p []byte) (n int, err error)
-	Write(p []byte) (n int, err error)
-	Close() error
-	SetReadDeadline(t time.Time) error
 }

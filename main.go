@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"one-api/relay/task"
 	"one-api/router"
 	"one-api/safty"
+	"one-api/service/tokilake"
 	"time"
 
 	"github.com/gin-contrib/sessions"
@@ -143,7 +145,20 @@ func initHttpServer() {
 	router.SetRouter(server, buildFS, indexPage)
 	port := viper.GetString("port")
 
-	err := runHTTPServer(server, port)
+	quicCtx, stopQUIC := context.WithCancel(context.Background())
+	defer stopQUIC()
+
+	closeQUICGateway, err := tokilake.StartConfiguredQUICGateway(quicCtx)
+	if err != nil {
+		logger.FatalLog("failed to start QUIC gateway: " + err.Error())
+	}
+	defer func() {
+		if closeQUICGateway != nil {
+			_ = closeQUICGateway()
+		}
+	}()
+
+	err = runHTTPServer(server, port)
 	if err != nil {
 		logger.FatalLog("failed to start HTTP server: " + err.Error())
 	}

@@ -35,7 +35,7 @@ func (e *tunnelStreamError) GetOpenAIError() *types.OpenAIErrorWithStatusCode {
 func DoTunnelRequest(ctx context.Context, channelID int, request *TunnelRequest) (*http.Response, string, error) {
 	manager := GetSessionManager()
 	session, ok := manager.GetSessionByChannelID(channelID)
-	if !ok || session == nil || session.SMux == nil {
+	if !ok || session == nil || session.Tunnel == nil {
 		return nil, "", fmt.Errorf("tokiame session is offline for channel %d", channelID)
 	}
 	return doTunnelRequestWithSession(ctx, manager, session, channelID, request)
@@ -44,7 +44,7 @@ func DoTunnelRequest(ctx context.Context, channelID int, request *TunnelRequest)
 func DoTunnelRequestByNamespace(ctx context.Context, namespace string, request *TunnelRequest) (*http.Response, string, error) {
 	manager := GetSessionManager()
 	session, ok := manager.GetSessionByNamespace(strings.TrimSpace(namespace))
-	if !ok || session == nil || session.SMux == nil {
+	if !ok || session == nil || session.Tunnel == nil {
 		return nil, "", fmt.Errorf("tokiame session is offline for namespace %s", namespace)
 	}
 	return doTunnelRequestWithSession(ctx, manager, session, session.ChannelID, request)
@@ -55,7 +55,7 @@ func doTunnelRequestWithSession(ctx context.Context, manager *SessionManager, se
 		return nil, "", fmt.Errorf("tunnel request is nil")
 	}
 
-	stream, err := session.SMux.OpenStream()
+	stream, err := session.Tunnel.OpenStream(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("open tokiame stream: %w", err)
 	}

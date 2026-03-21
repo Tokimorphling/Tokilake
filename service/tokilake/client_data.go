@@ -15,7 +15,6 @@ import (
 	"one-api/common"
 
 	"github.com/Tokimorphling/Tokilake/common/utils"
-	"github.com/xtaci/smux"
 )
 
 const tunnelChunkSize = 32 * 1024
@@ -25,10 +24,10 @@ var allowedTunnelRequestHeaders = map[string]struct{}{
 	"content-type": {},
 }
 
-func (c *Client) acceptDataStreams(ctx context.Context, smuxSession *smux.Session, errCh chan<- error) {
+func (c *Client) acceptDataStreams(ctx context.Context, tunnelSession TunnelSession, errCh chan<- error) {
 	c.info("accept data streams started")
 	for {
-		stream, err := smuxSession.AcceptStream()
+		stream, err := tunnelSession.AcceptStream(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				c.debug("accept data streams stopped due to context cancellation")
@@ -47,7 +46,7 @@ func (c *Client) acceptDataStreams(ctx context.Context, smuxSession *smux.Sessio
 	}
 }
 
-func (c *Client) handleDataStream(ctx context.Context, stream io.ReadWriteCloser) {
+func (c *Client) handleDataStream(ctx context.Context, stream TunnelStream) {
 	defer stream.Close()
 
 	codec := NewTunnelStreamCodec(stream)

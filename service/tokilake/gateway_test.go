@@ -25,11 +25,14 @@ func setupGatewayTestDB(t *testing.T) {
 	viper.Reset()
 	config.InitConf()
 	viper.Set("sqlite_path", filepath.Join(t.TempDir(), "tokilake-test.db"))
+	viper.Set("user_token_secret", "tokilake-test-user-token-secret-0123456789")
+	viper.Set("session_secret", "tokilake-test-session-secret")
 
 	common.UsingPostgreSQL = false
 	common.UsingSQLite = false
 	config.IsMasterNode = true
 	logger.SetupLogger()
+	require.NoError(t, common.InitUserToken())
 
 	err := model.InitDB()
 	require.NoError(t, err)
@@ -39,12 +42,14 @@ func setupGatewayTestDB(t *testing.T) {
 
 	model.ChannelGroup.Load()
 	model.GlobalUserGroupRatio.Load()
+	defaultSessionManager = NewSessionManager()
 
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 		viper.Reset()
 		common.UsingPostgreSQL = false
 		common.UsingSQLite = false
+		defaultSessionManager = NewSessionManager()
 	})
 }
 
@@ -83,6 +88,24 @@ func createPrivateGroupGrant(t *testing.T, ownerUserID int, targetUserID int, gr
 		0,
 	)
 	require.NoError(t, err)
+}
+
+func createGatewayTestToken(t *testing.T, userID int) *model.Token {
+	t.Helper()
+
+	token := &model.Token{
+		UserId:         userID,
+		Name:           fmt.Sprintf("toki-token-%d", gatewayTestSeq.Add(1)),
+		Status:         config.TokenStatusEnabled,
+		CreatedTime:    time.Now().Unix(),
+		AccessedTime:   time.Now().Unix(),
+		ExpiredTime:    -1,
+		UnlimitedQuota: true,
+		RemainQuota:    1,
+	}
+	require.NoError(t, token.Insert())
+	require.NotEmpty(t, token.Key)
+	return token
 }
 
 func TestRegisterWorkerSessionEnforcesNamespaceOwnership(t *testing.T) {

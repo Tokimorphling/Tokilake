@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	ControlMessageTypeAuth          = "auth"
 	ControlMessageTypeRegister      = "register"
 	ControlMessageTypeHeartbeat     = "heartbeat"
 	ControlMessageTypeModelsSync    = "models_sync"
@@ -22,12 +23,17 @@ const (
 type ControlMessage struct {
 	Type          string                `json:"type"`
 	RequestID     string                `json:"request_id,omitempty"`
+	Auth          *AuthMessage          `json:"auth,omitempty"`
 	Register      *RegisterMessage      `json:"register,omitempty"`
 	Heartbeat     *HeartbeatMessage     `json:"heartbeat,omitempty"`
 	ModelsSync    *ModelsSyncMessage    `json:"models_sync,omitempty"`
 	CancelRequest *CancelRequestMessage `json:"cancel_request,omitempty"`
 	Ack           *AckMessage           `json:"ack,omitempty"`
 	Error         *ErrorMessage         `json:"error,omitempty"`
+}
+
+type AuthMessage struct {
+	Token string `json:"token"`
 }
 
 type RegisterMessage struct {

@@ -2,9 +2,12 @@ package tokilake
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"slices"
@@ -17,15 +20,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/quic-go/quic-go"
 	"github.com/xtaci/smux"
 )
 
 const (
 	defaultHeartbeatInterval = 15 * time.Second
 	defaultReconnectDelay    = 5 * time.Second
+	defaultQUICDialTimeout   = 3 * time.Second
 	controlAckTimeout        = 15 * time.Second
 	defaultAPIKeyHeader      = "Authorization"
 	defaultAPIKeyPrefix      = "Bearer "
+	TransportModeAuto        = "auto"
+	TransportModeQUIC        = "quic"
+	TransportModeWebSocket   = "websocket"
 )
 
 type ModelTargetConfig struct {
@@ -48,6 +56,8 @@ type ResolvedTarget struct {
 
 type ClientConfig struct {
 	GatewayURL               string                       `json:"gateway_url"`
+	QuicEndpoint             string                       `json:"quic_endpoint,omitempty"`
+	TransportMode            string                       `json:"transport_mode,omitempty"`
 	Token                    string                       `json:"token"`
 	Namespace                string                       `json:"namespace"`
 	NodeName                 string                       `json:"node_name,omitempty"`
@@ -69,6 +79,25 @@ type Client struct {
 	targetKeyNext  map[string]int
 }
 
+type clientTunnel struct {
+	transport     string
+	session       TunnelSession
+	controlStream TunnelStream
+}
+
+func (t *clientTunnel) Close() error {
+	if t == nil {
+		return nil
+	}
+	if t.controlStream != nil {
+		_ = t.controlStream.Close()
+	}
+	if t.session != nil {
+		return t.session.Close()
+	}
+	return nil
+}
+
 func LoadClientConfigFromEnv() (*ClientConfig, error) {
 	config := &ClientConfig{}
 
@@ -84,6 +113,8 @@ func LoadClientConfigFromEnv() (*ClientConfig, error) {
 	}
 
 	overrideStringEnv(&config.GatewayURL, "TOKIAME_GATEWAY_URL")
+	overrideStringEnv(&config.QuicEndpoint, "TOKIAME_QUIC_ENDPOINT")
+	overrideStringEnv(&config.TransportMode, "TOKIAME_TRANSPORT_MODE")
 	overrideStringEnv(&config.Token, "TOKIAME_TOKEN")
 	overrideStringEnv(&config.Namespace, "TOKIAME_NAMESPACE")
 	overrideStringEnv(&config.NodeName, "TOKIAME_NODE_NAME")
@@ -134,12 +165,22 @@ func (c *ClientConfig) Validate() error {
 	if c.ReconnectDelaySeconds <= 0 {
 		c.ReconnectDelaySeconds = int(defaultReconnectDelay / time.Second)
 	}
+	c.QuicEndpoint = normalizeQUICEndpoint(c.QuicEndpoint)
+	c.TransportMode = normalizeTransportMode(c.TransportMode)
+	if c.TransportMode == "" {
+		return errors.New("TOKIAME_TRANSPORT_MODE must be one of auto, quic, websocket")
+	}
 	c.NodeName = strings.TrimSpace(c.NodeName)
 	c.Group = strings.TrimSpace(c.Group)
 	c.BackendType = strings.TrimSpace(c.BackendType)
 	c.Namespace = strings.TrimSpace(c.Namespace)
 	c.GatewayURL = strings.TrimSpace(c.GatewayURL)
 	c.Token = strings.TrimSpace(c.Token)
+	if c.TransportMode == TransportModeQUIC {
+		if _, err := c.ResolveQUICEndpoint(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -197,8 +238,10 @@ func NewClient(config *ClientConfig) *Client {
 }
 
 func (c *Client) Run(ctx context.Context) error {
-	c.info("client run loop started gateway_url=%s models=%v group=%s heartbeat_interval=%s reconnect_delay=%s backend_type=%s",
+	c.info("client run loop started gateway_url=%s quic_endpoint=%s transport_mode=%s models=%v group=%s heartbeat_interval=%s reconnect_delay=%s backend_type=%s",
 		c.config.GatewayURL,
+		c.config.QuicEndpoint,
+		c.config.TransportMode,
 		c.config.ModelNames(),
 		c.config.Group,
 		c.config.HeartbeatInterval(),
@@ -224,49 +267,34 @@ func (c *Client) Run(ctx context.Context) error {
 }
 
 func (c *Client) runOnce(ctx context.Context) error {
-	headers := make(http.Header)
-	headers.Set("Authorization", "Bearer "+c.config.Token)
-	c.info("dialing gateway gateway_url=%s", c.config.GatewayURL)
-
-	wsConn, response, err := c.dialer.DialContext(ctx, c.config.GatewayURL, headers)
+	tunnel, err := c.dialGateway(ctx)
 	if err != nil {
-		if response != nil {
-			return fmt.Errorf("dial gateway failed: %w (status=%s)", err, response.Status)
+		return err
+	}
+	defer tunnel.Close()
+
+	codec := newControlCodec(tunnel.controlStream)
+	if tunnel.transport == TunnelTransportQUIC {
+		if err = c.authenticate(codec, tunnel.controlStream); err != nil {
+			return err
 		}
-		return fmt.Errorf("dial gateway failed: %w", err)
 	}
-	defer wsConn.Close()
-
-	smuxConfig := smux.DefaultConfig()
-	smuxConfig.KeepAliveDisabled = true
-	smuxSession, err := smux.Client(newWebsocketStreamConn(wsConn), smuxConfig)
-	if err != nil {
-		return fmt.Errorf("create smux client: %w", err)
-	}
-	defer smuxSession.Close()
-
-	controlStream, err := smuxSession.OpenStream()
-	if err != nil {
-		return fmt.Errorf("open control stream: %w", err)
-	}
-	defer controlStream.Close()
-
-	codec := newControlCodec(controlStream)
-	if err = c.register(codec, controlStream); err != nil {
+	if err = c.register(codec, tunnel.controlStream); err != nil {
 		return err
 	}
-	if err = c.syncModels(codec, controlStream); err != nil {
+	if err = c.syncModels(codec, tunnel.controlStream); err != nil {
 		return err
 	}
 
-	c.info("worker connected group=%s models=%v backend_type=%s",
+	c.info("worker connected transport=%s group=%s models=%v backend_type=%s",
+		tunnel.transport,
 		c.config.Group,
 		c.config.ModelNames(),
 		c.config.ControlPlaneBackendType(),
 	)
 
 	errCh := make(chan error, 2)
-	go c.acceptDataStreams(ctx, smuxSession, errCh)
+	go c.acceptDataStreams(ctx, tunnel.session, errCh)
 	go c.readControlLoop(ctx, codec, errCh)
 	go c.heartbeatLoop(ctx, codec, errCh)
 
@@ -276,6 +304,121 @@ func (c *Client) runOnce(ctx context.Context) error {
 	case err = <-errCh:
 		return err
 	}
+}
+
+func (c *Client) dialGateway(ctx context.Context) (*clientTunnel, error) {
+	switch c.config.TransportMode {
+	case TransportModeWebSocket:
+		return c.dialWebSocketTunnel(ctx)
+	case TransportModeQUIC:
+		return c.dialQUICTunnel(ctx)
+	default:
+		if !c.config.ShouldAttemptQUIC() {
+			return c.dialWebSocketTunnel(ctx)
+		}
+		tunnel, err := c.dialQUICTunnel(ctx)
+		if err == nil {
+			return tunnel, nil
+		}
+		c.warn("quic dial failed, falling back transport=%s gateway_url=%s quic_endpoint=%s err=%v",
+			TunnelTransportWebSocket, c.config.GatewayURL, c.config.QuicEndpoint, err)
+		return c.dialWebSocketTunnel(ctx)
+	}
+}
+
+func (c *Client) dialWebSocketTunnel(ctx context.Context) (*clientTunnel, error) {
+	websocketURL, err := normalizeWebSocketGatewayURL(c.config.GatewayURL)
+	if err != nil {
+		return nil, err
+	}
+
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer "+c.config.Token)
+
+	c.info("dialing gateway transport=%s gateway_url=%s", TunnelTransportWebSocket, websocketURL)
+
+	wsConn, response, err := c.dialer.DialContext(ctx, websocketURL, headers)
+	if err != nil {
+		if response != nil {
+			return nil, fmt.Errorf("dial websocket gateway failed: %w (status=%s)", err, response.Status)
+		}
+		return nil, fmt.Errorf("dial websocket gateway failed: %w", err)
+	}
+
+	smuxConfig := smux.DefaultConfig()
+	smuxConfig.KeepAliveDisabled = true
+	smuxSession, err := smux.Client(newWebsocketStreamConn(wsConn), smuxConfig)
+	if err != nil {
+		_ = wsConn.Close()
+		return nil, fmt.Errorf("create smux client: %w", err)
+	}
+
+	tunnelSession := newSMuxTunnelSession(smuxSession)
+	controlStream, err := tunnelSession.OpenStream(ctx)
+	if err != nil {
+		_ = tunnelSession.Close()
+		_ = wsConn.Close()
+		return nil, fmt.Errorf("open websocket control stream: %w", err)
+	}
+
+	return &clientTunnel{
+		transport:     TunnelTransportWebSocket,
+		session:       tunnelSession,
+		controlStream: controlStream,
+	}, nil
+}
+
+func (c *Client) dialQUICTunnel(ctx context.Context) (*clientTunnel, error) {
+	quicEndpoint, err := c.config.ResolveQUICEndpoint()
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig, err := newQUICClientTLSConfig(quicEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, defaultQUICDialTimeout)
+	defer cancel()
+
+	c.info("dialing gateway transport=%s gateway_url=%s quic_endpoint=%s", TunnelTransportQUIC, c.config.GatewayURL, quicEndpoint)
+	conn, err := quic.DialAddr(dialCtx, quicEndpoint, tlsConfig, &quic.Config{
+		KeepAlivePeriod: c.config.HeartbeatInterval(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dial quic gateway failed: %w", err)
+	}
+
+	tunnelSession := newQUICTunnelSession(conn)
+	controlStream, err := tunnelSession.OpenStream(ctx)
+	if err != nil {
+		_ = tunnelSession.Close()
+		return nil, fmt.Errorf("open quic control stream: %w", err)
+	}
+
+	return &clientTunnel{
+		transport:     TunnelTransportQUIC,
+		session:       tunnelSession,
+		controlStream: controlStream,
+	}, nil
+}
+
+func (c *Client) authenticate(codec *controlCodec, controlStream readDeadlineSetter) error {
+	requestID := c.nextRequestID("auth")
+	authMsg := &ControlMessage{
+		Type:      ControlMessageTypeAuth,
+		RequestID: requestID,
+		Auth: &AuthMessage{
+			Token: c.config.Token,
+		},
+	}
+	c.debug(">>> sending auth request_id=%s namespace=%s", requestID, c.config.Namespace)
+	if err := codec.WriteMessage(authMsg); err != nil {
+		c.warn("<<< send auth failed request_id=%s err=%v", requestID, err)
+		return fmt.Errorf("send auth: %w", err)
+	}
+	return c.awaitAck(codec, controlStream, requestID, "auth")
 }
 
 func (c *Client) register(codec *controlCodec, controlStream readDeadlineSetter) error {
@@ -453,6 +596,53 @@ func (c *Client) heartbeatLoop(ctx context.Context, codec *controlCodec, errCh c
 
 func (c *Client) nextRequestID(prefix string) string {
 	return fmt.Sprintf("%s:%s:%s", c.config.Namespace, prefix, uuid.NewString())
+}
+
+func (c *ClientConfig) ShouldAttemptQUIC() bool {
+	if strings.TrimSpace(c.QuicEndpoint) != "" {
+		return true
+	}
+
+	gatewayURL, err := url.Parse(strings.TrimSpace(c.GatewayURL))
+	if err != nil {
+		return false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(gatewayURL.Scheme)) {
+	case "wss", "https":
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *ClientConfig) ResolveQUICEndpoint() (string, error) {
+	if endpoint := normalizeQUICEndpoint(c.QuicEndpoint); endpoint != "" {
+		return endpoint, nil
+	}
+
+	gatewayURL, err := url.Parse(strings.TrimSpace(c.GatewayURL))
+	if err != nil {
+		return "", fmt.Errorf("parse TOKIAME_GATEWAY_URL: %w", err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(gatewayURL.Scheme)) {
+	case "wss", "https":
+	default:
+		return "", errors.New("QUIC requires a secure TOKIAME_GATEWAY_URL or TOKIAME_QUIC_ENDPOINT")
+	}
+
+	host := strings.TrimSpace(gatewayURL.Hostname())
+	if host == "" {
+		return "", errors.New("TOKIAME_GATEWAY_URL host is required")
+	}
+
+	port := strings.TrimSpace(gatewayURL.Port())
+	if port == "" {
+		port = "443"
+	}
+
+	return net.JoinHostPort(host, port), nil
 }
 
 func (c *Client) resolveModelTarget(modelName string) (*ResolvedTarget, error) {
@@ -657,6 +847,81 @@ func normalizeClientBackendType(backendType string) string {
 	default:
 		return backendType
 	}
+}
+
+func normalizeTransportMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", TransportModeAuto:
+		return TransportModeAuto
+	case TransportModeQUIC:
+		return TransportModeQUIC
+	case TransportModeWebSocket:
+		return TransportModeWebSocket
+	default:
+		return ""
+	}
+}
+
+func normalizeQUICEndpoint(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	if strings.Contains(raw, "://") {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return raw
+		}
+		host := strings.TrimSpace(parsed.Hostname())
+		port := strings.TrimSpace(parsed.Port())
+		if host == "" || port == "" {
+			return raw
+		}
+		return net.JoinHostPort(host, port)
+	}
+
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+		return raw
+	}
+	return net.JoinHostPort(host, port)
+}
+
+func normalizeWebSocketGatewayURL(raw string) (string, error) {
+	gatewayURL, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse TOKIAME_GATEWAY_URL: %w", err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(gatewayURL.Scheme)) {
+	case "ws", "wss":
+	case "http":
+		gatewayURL.Scheme = "ws"
+	case "https":
+		gatewayURL.Scheme = "wss"
+	default:
+		return "", fmt.Errorf("unsupported TOKIAME_GATEWAY_URL scheme: %s", gatewayURL.Scheme)
+	}
+
+	return gatewayURL.String(), nil
+}
+
+func newQUICClientTLSConfig(endpoint string) (*tls.Config, error) {
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid QUIC endpoint %q: %w", endpoint, err)
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return nil, fmt.Errorf("invalid QUIC endpoint %q: host is required", endpoint)
+	}
+
+	return &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		NextProtos: []string{"tokilake.v1"},
+		ServerName: host,
+	}, nil
 }
 
 func overrideStringEnv(target *string, envName string) {

@@ -3,14 +3,11 @@ package tokilake
 import (
 	"context"
 	"errors"
-	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"one-api/model"
-
-	"github.com/xtaci/smux"
 )
 
 var errNamespaceAlreadyConnected = errors.New("namespace already connected")
@@ -37,8 +34,10 @@ type GatewaySession struct {
 	BackendType string
 	Models      []string
 	Status      int
-	SMux        *smux.Session
-	Control     io.ReadWriteCloser
+	Transport   string
+	Tunnel      TunnelSession
+	Control     TunnelStream
+	Authenticated bool
 
 	controlCodec *controlCodec
 	closeOnce    sync.Once
@@ -47,13 +46,10 @@ type GatewaySession struct {
 func (s *GatewaySession) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
-		if s.SMux != nil {
-			err = s.SMux.Close()
+		if s.Tunnel != nil {
+			err = s.Tunnel.Close()
 		}
 	})
-	if errors.Is(err, io.ErrClosedPipe) {
-		return nil
-	}
 	return err
 }
 
@@ -75,14 +71,16 @@ func NewSessionManager() *SessionManager {
 	}
 }
 
-func (m *SessionManager) NewGatewaySession(token *model.Token, tokenKey string, remoteAddr string, smuxSession *smux.Session) *GatewaySession {
+func (m *SessionManager) NewGatewaySession(token *model.Token, tokenKey string, remoteAddr string, transport string, tunnel TunnelSession) *GatewaySession {
 	return &GatewaySession{
-		ID:          m.nextID.Add(1),
-		Token:       token,
-		TokenKey:    tokenKey,
-		RemoteAddr:  remoteAddr,
-		ConnectedAt: time.Now(),
-		SMux:        smuxSession,
+		ID:            m.nextID.Add(1),
+		Token:         token,
+		TokenKey:      tokenKey,
+		RemoteAddr:    remoteAddr,
+		ConnectedAt:   time.Now(),
+		Transport:     transport,
+		Tunnel:        tunnel,
+		Authenticated: token != nil,
 	}
 }
 
