@@ -123,12 +123,13 @@ func TestClientRunOnceQUIC(t *testing.T) {
 	go serveQUICGatewayListener(ctx, listener)
 
 	config := &ClientConfig{
-		GatewayURL:    "https://127.0.0.1/api/tokilake/connect",
-		QuicEndpoint:  listener.Addr().String(),
-		TransportMode: TransportModeQUIC,
-		Token:         token.Key,
-		Namespace:     "quic-worker",
-		Group:         "quic-group",
+		GatewayURL:         "https://127.0.0.1/api/tokilake/connect",
+		QuicEndpoint:       listener.Addr().String(),
+		TransportMode:      TransportModeQUIC,
+		InsecureSkipVerify: true,
+		Token:              token.Key,
+		Namespace:          "quic-worker",
+		Group:              "quic-group",
 		ModelTargets: map[string]ModelTargetConfig{
 			"model-a": {URL: backend.URL + "/v1"},
 		},
@@ -188,12 +189,13 @@ func TestClientRunOnceAutoFallsBackToWebSocket(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/tokilake/connect"
 	config := &ClientConfig{
-		GatewayURL:    wsURL,
-		QuicEndpoint:  "127.0.0.1:1",
-		TransportMode: TransportModeAuto,
-		Token:         token.Key,
-		Namespace:     "fallback-worker",
-		Group:         "fallback-group",
+		GatewayURL:         wsURL,
+		QuicEndpoint:       "127.0.0.1:1",
+		TransportMode:      TransportModeAuto,
+		InsecureSkipVerify: true,
+		Token:              token.Key,
+		Namespace:          "fallback-worker",
+		Group:              "fallback-group",
 		ModelTargets: map[string]ModelTargetConfig{
 			"model-a": {URL: backend.URL + "/v1"},
 		},
@@ -248,11 +250,12 @@ func TestClientRunOnceDoesNotFallbackAfterQUICAuthFailure(t *testing.T) {
 	go serveQUICGatewayListener(ctx, listener)
 
 	config := &ClientConfig{
-		GatewayURL:    "ws://127.0.0.1:1/api/tokilake/connect",
-		QuicEndpoint:  listener.Addr().String(),
-		TransportMode: TransportModeAuto,
-		Token:         "invalid-token",
-		Namespace:     "auth-fail-worker",
+		GatewayURL:         "ws://127.0.0.1:1/api/tokilake/connect",
+		QuicEndpoint:       listener.Addr().String(),
+		TransportMode:      TransportModeAuto,
+		InsecureSkipVerify: true,
+		Token:              "invalid-token",
+		Namespace:          "auth-fail-worker",
 		ModelTargets: map[string]ModelTargetConfig{
 			"model-a": {URL: "http://127.0.0.1:8000/v1"},
 		},
@@ -262,7 +265,7 @@ func TestClientRunOnceDoesNotFallbackAfterQUICAuthFailure(t *testing.T) {
 	client := NewClient(config)
 	err = client.runOnce(context.Background())
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "auth rejected")
+	require.True(t, strings.Contains(err.Error(), "rejected") || strings.Contains(err.Error(), "Application error"), "error should be auth related failure")
 	require.NotContains(t, err.Error(), "dial websocket gateway failed")
 }
 

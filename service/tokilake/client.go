@@ -66,6 +66,7 @@ type ClientConfig struct {
 	ModelTargets             map[string]ModelTargetConfig `json:"model_targets,omitempty"`
 	HeartbeatIntervalSeconds int                          `json:"heartbeat_interval_seconds,omitempty"`
 	ReconnectDelaySeconds    int                          `json:"reconnect_delay_seconds,omitempty"`
+	InsecureSkipVerify       bool                         `json:"insecure_skip_verify,omitempty"`
 }
 
 type Client struct {
@@ -374,7 +375,7 @@ func (c *Client) dialQUICTunnel(ctx context.Context) (*clientTunnel, error) {
 		return nil, err
 	}
 
-	tlsConfig, err := newQUICClientTLSConfig(quicEndpoint)
+	tlsConfig, err := c.newQUICClientTLSConfig(quicEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -907,7 +908,7 @@ func normalizeWebSocketGatewayURL(raw string) (string, error) {
 	return gatewayURL.String(), nil
 }
 
-func newQUICClientTLSConfig(endpoint string) (*tls.Config, error) {
+func (c *Client) newQUICClientTLSConfig(endpoint string) (*tls.Config, error) {
 	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid QUIC endpoint %q: %w", endpoint, err)
@@ -918,9 +919,10 @@ func newQUICClientTLSConfig(endpoint string) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		NextProtos: []string{"tokilake.v1"},
-		ServerName: host,
+		MinVersion:         tls.VersionTLS13,
+		NextProtos:         []string{"tokilake.v1"},
+		ServerName:         host,
+		InsecureSkipVerify: c.config.InsecureSkipVerify,
 	}, nil
 }
 
