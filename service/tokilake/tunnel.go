@@ -51,6 +51,11 @@ func newSMuxTunnelSession(session *smux.Session) TunnelSession {
 	return &smuxTunnelSession{session: session}
 }
 
+// NewSMuxTunnelSession creates a TunnelSession from an smux.Session for testing purposes.
+func NewSMuxTunnelSession(session *smux.Session) TunnelSession {
+	return newSMuxTunnelSession(session)
+}
+
 func (s *smuxTunnelSession) AcceptStream(ctx context.Context) (TunnelStream, error) {
 	if s == nil || s.session == nil {
 		return nil, io.ErrClosedPipe

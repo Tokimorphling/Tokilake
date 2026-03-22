@@ -403,7 +403,7 @@ func setupVideoTaskTunnelSession(t *testing.T, channelID int, responder func(*to
 		ID:        uint64(channelID),
 		Namespace: "video-test-" + strconv.Itoa(channelID),
 		ChannelID: channelID,
-		SMux:      clientSession,
+		Tunnel:    tokilakesvc.NewSMuxTunnelSession(clientSession),
 	}
 	require.NoError(t, manager.ClaimNamespace(session, session.Namespace))
 	manager.BindChannel(session, 1, channelID, "video-group", []string{"video-model"}, "openai", 1)

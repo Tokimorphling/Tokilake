@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"one-api/common/logger"
 	"one-api/model"
 	tokilakesvc "one-api/service/tokilake"
 	"one-api/types"
@@ -17,6 +18,8 @@ import (
 )
 
 func TestProviderVideoMethodsUseTunnelEndpoints(t *testing.T) {
+	logger.SetupLogger()
+
 	channelID := 88001
 	requests := make(chan *tokilakesvc.TunnelRequest, 3)
 	setupVideoTunnelSession(t, channelID, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
@@ -145,7 +148,7 @@ func setupVideoTunnelSession(t *testing.T, channelID int, responder func(*tokila
 		ID:        uint64(channelID),
 		Namespace: "video-test-provider",
 		ChannelID: channelID,
-		SMux:      clientSession,
+		Tunnel:    tokilakesvc.NewSMuxTunnelSession(clientSession),
 	}
 	require.NoError(t, manager.ClaimNamespace(session, session.Namespace))
 	manager.BindChannel(session, 1, channelID, "default", []string{"video-model"}, "openai", 1)
