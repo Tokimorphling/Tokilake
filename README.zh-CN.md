@@ -6,7 +6,7 @@
 
 > **Control your own GPUs like OpenRouter.**
 
-Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关。它彻底翻转了传统的 API 网关模型：不再局限于网关主动请求有公网 IP 的服务器，而是**允许任意位于 NAT/内网之后的 GPU 工作节点（Tokiame）通过 WebSocket 反向隧道主动接入中心网关（Hub）**。
+Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关。它彻底翻转了传统的 API 网关模型：不再局限于网关主动请求有公网 IP 的服务器，而是**允许任意位于 NAT/内网之后的 GPU 工作节点（Tokiame）通过反向隧道（WebSocket 或 QUIC）主动接入中心网关（Hub）**。
 
 > **Tokilake** 基于 [MartialBE/one-hub](https://github.com/MartialBE/one-hub) 以及后续的 One-API 生态分支持续演进而来。
 
@@ -80,12 +80,28 @@ graph TB
 ```
 
 - **`Tokilake` (网关/Hub级别)**: 统一的流量入口。接收用户的标准 HTTP API 请求，并将其多路复用到对应的边缘节点。
-- **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 `xtaci/smux` 多路复用协议维持极低延迟的 WebSocket 反向隧道。
+- **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 WebSocket（基于 `xtaci/smux` 多路复用）或 QUIC 协议维持极低延迟的反向隧道。
+
+### 传输协议选择
+
+Tokiame 支持两种传输协议：
+
+| 协议 | 说明 |
+|------|------|
+| **WebSocket** (默认) | 基于 `xtaci/smux` 流式多路复用，兼容标准 HTTP/HTTPS 网关。 |
+| **QUIC** | 原生 QUIC 协议（`quic-go`），内置多路复用与 0-RTT 快速建立连接，需要 TLS 及专用 QUIC 网关端点。 |
+
+**传输模式选择**（通过 `TOKIAME_TRANSPORT_MODE` 环境变量）：
+- `auto`（默认）：优先尝试 QUIC，连接失败则降级到 WebSocket
+- `quic`：仅使用 QUIC
+- `websocket`：仅使用 WebSocket
+
+QUIC 特别适合对延迟敏感且网络质量不稳定的场景，同时支持服务端连接迁移。
 
 ### 简明工作流
-1. `Tokiame` 客户端使用标准的用户 API 令牌向 `Tokilake` 发起 WebSocket 连接请求。
+1. `Tokiame` 客户端使用标准的用户 API 令牌向 `Tokilake` 发起 WebSocket 或 QUIC 连接请求。
 2. 网关验证通过后，自动在数据库中为其生成/绑定一个 `type=100` 的虚拟 `Channel`，并划入特定的私有分组。
-3. 当用户通过网关发起大模型 HTTP 请求，网关就像处理普通渠道一样，将其透明地通过 `smux` 隧道流式推送给边缘层节点处理。
+3. 当用户通过网关发起大模型 HTTP 请求，网关就像处理普通渠道一样，将其透明地通过隧道流式推送给边缘层节点处理。
 4. 基于实时的心跳保活。一旦边缘节点断网离线，网关将其虚拟 Channel 自动禁用摘流，实现零感知的故障转移 (Failover)。
 
 ## 致谢

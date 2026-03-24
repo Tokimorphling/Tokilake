@@ -6,7 +6,7 @@
 
 > **Control your own GPUs like OpenRouter.**
 
-Tokilake is a decentralized Large Language Model (LLM) API scheduling gateway built on the One-API ecosystem. It completely flips the traditional API gateway model: instead of the gateway strictly acting as a client that actively requests servers with public IPs, it **allows any GPU worker node (Tokiame) located behind NAT/Intranets to actively connect to the central gateway (Hub) via a reverse WebSocket tunnel**.
+Tokilake is a decentralized Large Language Model (LLM) API scheduling gateway built on the One-API ecosystem. It completely flips the traditional API gateway model: instead of the gateway strictly acting as a client that actively requests servers with public IPs, it **allows any GPU worker node (Tokiame) located behind NAT/Intranets to actively connect to the central gateway (Hub) via a reverse tunnel (WebSocket or QUIC)**.
 
 > **Tokilake** is built on top of [MartialBE/one-hub](https://github.com/MartialBE/one-hub) and the broader One-API ecosystem that evolved around it.
 
@@ -81,12 +81,28 @@ graph TB
 ```
 
 - **`Tokilake` (Gateway/Hub Level)**: The unified ingress for traffic. It receives standard HTTP API requests from end-users and multiplexes them to the corresponding edge nodes.
-- **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse WebSocket tunnel via the `xtaci/smux` multiplexing protocol.
+- **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse tunnel via either WebSocket (with `xtaci/smux` multiplexing) or QUIC.
+
+### Transport Options
+
+Tokiame supports two transport protocols:
+
+| Protocol | Description |
+|----------|-------------|
+| **WebSocket** (default) | Uses `xtaci/smux` for stream multiplexing over WebSocket. Compatible with standard HTTP/HTTPS gateways. |
+| **QUIC** | Native QUIC protocol (`quic-go`) with built-in multiplexing and 0-RTT connection establishment. Requires TLS and a dedicated QUIC-enabled gateway endpoint. |
+
+**Transport Mode Selection** (set via `TOKIAME_TRANSPORT_MODE`):
+- `auto` (default): Attempts QUIC first, falls back to WebSocket if connection fails
+- `quic`: QUIC only
+- `websocket`: WebSocket only
+
+QUIC is ideal for scenarios requiring lower latency and better connection resilience, especially on unreliable networks. It also supports server-side connection migration.
 
 ### Simplified Workflow
-1. The `Tokiame` client initiates a WebSocket connection request to `Tokilake` using a standard user API token.
+1. The `Tokiame` client initiates a WebSocket or QUIC connection request to `Tokilake` using a standard user API token.
 2. Upon successful gateway verification, it automatically creates/binds a virtual `Channel` (`type=100`) in the database and assigns it to a specific Private Group.
-3. When a user sends an LLM HTTP request through the gateway, the gateway treats it like any normal channel, transparently streaming it to the edge node for processing via the `smux` tunnel.
+3. When a user sends an LLM HTTP request through the gateway, the gateway treats it like any normal channel, transparently streaming it to the edge node for processing via the tunnel.
 4. Relies on real-time heartbeat keepalives. If an edge node loses its connection, the gateway automatically disables its virtual Channel, achieving zero-downtime Failover.
 
 ## Acknowledgements
