@@ -1,6 +1,9 @@
 package types
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	ContentTypeText     = "text"
@@ -217,8 +220,8 @@ type ChatCompletionRequest struct {
 	ThinkingBudget *int  `json:"thinking_budget,omitempty"` // qwen3 思考长度，只有enable_thinking开启才生效
 	EnableSearch   *bool `json:"enable_search,omitempty"`   // qwen 搜索开关
 
-  Thinking *interface{} `json:"thinking,omitempty"` // thinking 思考开关，兼容火山引擎
-  
+	Thinking any `json:"thinking,omitempty"` // thinking 思考开关，兼容火山引擎
+
 	OneOtherArg string `json:"-"`
 }
 
@@ -317,11 +320,11 @@ type ChatCompletionResponse struct {
 }
 
 func (cc *ChatCompletionResponse) GetContent() string {
-	var content string
+	var content strings.Builder
 	for _, choice := range cc.Choices {
-		content += choice.Message.StringContent()
+		content.WriteString(choice.Message.StringContent())
 	}
-	return content
+	return content.String()
 }
 
 func (c ChatCompletionStreamChoice) ConvertOpenaiStream() []ChatCompletionStreamChoice {

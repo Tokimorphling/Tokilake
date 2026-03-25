@@ -242,59 +242,37 @@ func GetUserPrivateGroupGrantDetails(userId int) ([]*UserPrivateGroupGrant, erro
 }
 
 func GetOwnedPrivateGroups(ownerUserId int) ([]*PrivateGroupSummary, error) {
-	var groups []*PrivateGroup
-	if err := DB.Where("owner_user_id = ?", ownerUserId).Order("id DESC").Find(&groups).Error; err != nil {
-		return nil, err
-	}
-	summaries := make([]*PrivateGroupSummary, 0, len(groups))
-	for _, group := range groups {
-		memberCount, err := CountActivePrivateGroupMembers(group.Id)
-		if err != nil {
-			return nil, err
-		}
-		inviteCount, err := CountActivePrivateGroupInviteCodes(group.Id)
-		if err != nil {
-			return nil, err
-		}
-		summaries = append(summaries, &PrivateGroupSummary{
-			Id:              group.Id,
-			GroupSlug:       group.GroupSlug,
-			Status:          group.Status,
-			CreatedAt:       group.CreatedAt,
-			UpdatedAt:       group.UpdatedAt,
-			MemberCount:     memberCount,
-			InviteCodeCount: inviteCount,
-		})
-	}
-	return summaries, nil
+	return getPrivateGroupSummaries(DB.Where("private_groups.owner_user_id = ?", ownerUserId))
 }
 
 func GetAllPrivateGroups() ([]*PrivateGroupSummary, error) {
-	var groups []*PrivateGroup
-	if err := DB.Order("id DESC").Find(&groups).Error; err != nil {
-		return nil, err
-	}
-	summaries := make([]*PrivateGroupSummary, 0, len(groups))
-	for _, group := range groups {
-		memberCount, err := CountActivePrivateGroupMembers(group.Id)
-		if err != nil {
-			return nil, err
-		}
-		inviteCount, err := CountActivePrivateGroupInviteCodes(group.Id)
-		if err != nil {
-			return nil, err
-		}
-		summaries = append(summaries, &PrivateGroupSummary{
-			Id:              group.Id,
-			GroupSlug:       group.GroupSlug,
-			Status:          group.Status,
-			CreatedAt:       group.CreatedAt,
-			UpdatedAt:       group.UpdatedAt,
-			MemberCount:     memberCount,
-			InviteCodeCount: inviteCount,
-		})
-	}
-	return summaries, nil
+	return getPrivateGroupSummaries(DB)
+}
+
+func getPrivateGroupSummaries(scope *gorm.DB) ([]*PrivateGroupSummary, error) {
+	now := utils.GetTimestamp()
+	summaries := make([]*PrivateGroupSummary, 0)
+	err := scope.
+		Table("private_groups").
+		Select(`private_groups.id, private_groups.group_slug, private_groups.status, private_groups.created_at, private_groups.updated_at,
+			COALESCE(mc.member_count, 0) AS member_count,
+			COALESCE(ic.invite_code_count, 0) AS invite_code_count`).
+		Joins(`LEFT JOIN (
+			SELECT group_id, COUNT(*) AS member_count
+			FROM private_group_grants
+			WHERE revoked_at = 0 AND (expires_at = 0 OR expires_at >= ?)
+			GROUP BY group_id
+		) mc ON mc.group_id = private_groups.id`, now).
+		Joins(`LEFT JOIN (
+			SELECT group_id, COUNT(*) AS invite_code_count
+			FROM private_group_invite_codes
+			WHERE status = ? AND (expires_at = 0 OR expires_at >= ?)
+			GROUP BY group_id
+		) ic ON ic.group_id = private_groups.id`, PrivateGroupInviteCodeStatusEnabled, now).
+		Where("private_groups.deleted_at IS NULL").
+		Order("private_groups.id DESC").
+		Scan(&summaries).Error
+	return summaries, err
 }
 
 func CountActivePrivateGroupMembers(groupId int) (int64, error) {

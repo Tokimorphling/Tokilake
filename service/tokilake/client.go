@@ -294,7 +294,7 @@ func (c *Client) runOnce(ctx context.Context) error {
 		c.config.ControlPlaneBackendType(),
 	)
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go c.acceptDataStreams(ctx, tunnel.session, errCh)
 	go c.readControlLoop(ctx, codec, errCh)
 	go c.heartbeatLoop(ctx, codec, errCh)

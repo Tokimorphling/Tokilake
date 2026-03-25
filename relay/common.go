@@ -19,6 +19,7 @@ import (
 	providersBase "one-api/providers/base"
 	"one-api/types"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,37 +30,44 @@ type openAIErrorCarrier interface {
 	GetOpenAIError() *types.OpenAIErrorWithStatusCode
 }
 
-func Path2Relay(c *gin.Context, path string) RelayBaseInterface {
-	var relay RelayBaseInterface
-	if strings.HasPrefix(path, "/v1/chat/completions") {
-		relay = NewRelayChat(c)
-	} else if strings.HasPrefix(path, "/v1/completions") {
-		relay = NewRelayCompletions(c)
-	} else if strings.HasPrefix(path, "/v1/embeddings") {
-		relay = NewRelayEmbeddings(c)
-	} else if strings.HasPrefix(path, "/v1/moderations") {
-		relay = NewRelayModerations(c)
-	} else if strings.HasPrefix(path, "/v1/images/generations") || strings.HasPrefix(path, "/recraftAI/v1/images/generations") {
-		relay = NewRelayImageGenerations(c)
-	} else if strings.HasPrefix(path, "/v1/images/edits") {
-		relay = NewRelayImageEdits(c)
-	} else if strings.HasPrefix(path, "/v1/images/variations") {
-		relay = NewRelayImageVariations(c)
-	} else if strings.HasPrefix(path, "/v1/audio/speech") {
-		relay = NewRelaySpeech(c)
-	} else if strings.HasPrefix(path, "/v1/audio/transcriptions") {
-		relay = NewRelayTranscriptions(c)
-	} else if strings.HasPrefix(path, "/v1/audio/translations") {
-		relay = NewRelayTranslations(c)
-	} else if strings.HasPrefix(path, "/claude") {
-		relay = NewRelayClaudeOnly(c)
-	} else if strings.HasPrefix(path, "/gemini") {
-		relay = NewRelayGeminiOnly(c)
-	} else if strings.HasPrefix(path, "/v1/responses") {
-		relay = NewRelayResponses(c)
-	}
+type relayRouteEntry struct {
+	prefix  string
+	factory func(*gin.Context) RelayBaseInterface
+}
 
-	return relay
+// relayRoutes is sorted by path length descending so longer prefixes match first,
+// preventing accidental overlap (e.g. "/v1/completions" matching "/v1/chat/completions").
+var relayRoutes = func() []relayRouteEntry {
+	routes := []relayRouteEntry{
+		{"/v1/chat/completions", func(c *gin.Context) RelayBaseInterface { return NewRelayChat(c) }},
+		{"/v1/completions", func(c *gin.Context) RelayBaseInterface { return NewRelayCompletions(c) }},
+		{"/v1/embeddings", func(c *gin.Context) RelayBaseInterface { return NewRelayEmbeddings(c) }},
+		{"/v1/moderations", func(c *gin.Context) RelayBaseInterface { return NewRelayModerations(c) }},
+		{"/v1/images/generations", func(c *gin.Context) RelayBaseInterface { return NewRelayImageGenerations(c) }},
+		{"/recraftAI/v1/images/generations", func(c *gin.Context) RelayBaseInterface { return NewRelayImageGenerations(c) }},
+		{"/v1/images/edits", func(c *gin.Context) RelayBaseInterface { return NewRelayImageEdits(c) }},
+		{"/v1/images/variations", func(c *gin.Context) RelayBaseInterface { return NewRelayImageVariations(c) }},
+		{"/v1/audio/speech", func(c *gin.Context) RelayBaseInterface { return NewRelaySpeech(c) }},
+		{"/v1/audio/transcriptions", func(c *gin.Context) RelayBaseInterface { return NewRelayTranscriptions(c) }},
+		{"/v1/audio/translations", func(c *gin.Context) RelayBaseInterface { return NewRelayTranslations(c) }},
+		{"/claude", func(c *gin.Context) RelayBaseInterface { return NewRelayClaudeOnly(c) }},
+		{"/gemini", func(c *gin.Context) RelayBaseInterface { return NewRelayGeminiOnly(c) }},
+		{"/v1/responses", func(c *gin.Context) RelayBaseInterface { return NewRelayResponses(c) }},
+	}
+	// Sort by prefix length descending for longest-match-first
+	sort.Slice(routes, func(i, j int) bool {
+		return len(routes[i].prefix) > len(routes[j].prefix)
+	})
+	return routes
+}()
+
+func Path2Relay(c *gin.Context, path string) RelayBaseInterface {
+	for _, route := range relayRoutes {
+		if strings.HasPrefix(path, route.prefix) {
+			return route.factory(c)
+		}
+	}
+	return nil
 }
 
 func checkLimitModel(c *gin.Context, modelName string) (error error) {

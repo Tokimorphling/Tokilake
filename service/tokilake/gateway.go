@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/logger"
 	"one-api/model"
@@ -359,66 +360,74 @@ func registerWorkerSession(manager *SessionManager, session *GatewaySession, reg
 func updateWorkerHeartbeat(session *GatewaySession, heartbeat *HeartbeatMessage) error {
 	status := normalizeWorkerStatus(heartbeat.Status)
 	models := session.Models
+	modelsChanged := false
 	if len(heartbeat.CurrentModels) > 0 {
 		models = normalizeModels(heartbeat.CurrentModels)
+		modelsChanged = !stringSlicesEqual(models, session.Models)
 	}
 
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
-		node := &model.TokilakeWorkerNode{}
-		if err := tx.First(node, "id = ?", session.WorkerID).Error; err != nil {
-			return err
-		}
-		channel := &model.Channel{}
-		if err := tx.First(channel, "id = ?", session.ChannelID).Error; err != nil {
-			return err
-		}
+	now := time.Now().Unix()
+	statusChanged := status != session.Status
 
-		now := time.Now().Unix()
-		node.Status = status
-		node.LastHeartbeat = now
-		node.UpdatedAt = now
-		if heartbeat.NodeName != "" {
-			node.NodeName = strings.TrimSpace(heartbeat.NodeName)
+	// Build node updates directly without SELECT
+	nodeUpdates := map[string]any{
+		"status":         status,
+		"last_heartbeat": now,
+		"updated_at":     now,
+	}
+	if heartbeat.NodeName != "" {
+		nodeUpdates["node_name"] = strings.TrimSpace(heartbeat.NodeName)
+	}
+	if heartbeat.HardwareInfo != nil {
+		if data, err := common.Marshal(heartbeat.HardwareInfo); err == nil {
+			nodeUpdates["hardware_info"] = string(data)
 		}
-		if heartbeat.HardwareInfo != nil {
-			node.SetHardwareInfo(heartbeat.HardwareInfo)
+	}
+	if modelsChanged {
+		if data, err := common.Marshal(models); err == nil {
+			nodeUpdates["models"] = string(data)
 		}
-		if len(models) > 0 {
-			node.SetModels(models)
-		}
-		if err := tx.Model(node).Updates(map[string]any{
-			"node_name":      node.NodeName,
-			"status":         node.Status,
-			"models":         node.Models,
-			"hardware_info":  node.HardwareInfo,
-			"last_heartbeat": node.LastHeartbeat,
-			"updated_at":     node.UpdatedAt,
-		}).Error; err != nil {
-			return err
-		}
+	}
 
-		channel.Status = channelStatusFromWorkerStatus(status)
-		updates := map[string]any{
-			"status": channel.Status,
-		}
-		if len(models) > 0 {
-			channel.Models = strings.Join(models, ",")
-			updates["models"] = channel.Models
-		}
-		if err := tx.Model(channel).Updates(updates).Error; err != nil {
-			return err
-		}
+	// Build channel updates directly without SELECT
+	channelUpdates := map[string]any{
+		"status": channelStatusFromWorkerStatus(status),
+	}
+	if modelsChanged {
+		channelUpdates["models"] = strings.Join(models, ",")
+	}
 
-		session.Status = status
-		if len(models) > 0 {
-			session.Models = models
-		}
-		return nil
-	})
-	if err == nil {
+	// Direct UPDATE queries — no SELECT needed
+	if err := model.DB.Model(&model.TokilakeWorkerNode{}).Where("id = ?", session.WorkerID).Updates(nodeUpdates).Error; err != nil {
+		return err
+	}
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", session.ChannelID).Updates(channelUpdates).Error; err != nil {
+		return err
+	}
+
+	// Update in-memory session state
+	session.Status = status
+	if modelsChanged {
+		session.Models = models
+	}
+
+	// Only reload channel group when something user-visible changed
+	if statusChanged || modelsChanged {
 		model.ChannelGroup.Load()
 	}
-	return err
+	return nil
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func syncWorkerModels(session *GatewaySession, modelsSync *ModelsSyncMessage) error {
