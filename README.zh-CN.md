@@ -19,6 +19,24 @@ Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关
 - **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 - **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
 
+## 🚀 一键部署 (推荐)
+
+最快部署自带自动 HTTPS 和 QUIC 支持的 Tokilake Hub 的方法：
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/Tokimorphling/Tokilake.git
+cd Tokilake/deploy
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，设置你的域名 (DOMAIN) 和 密钥 (SECRETS)
+
+# 3. 启动
+docker compose -f docker-compose.hub.yml up -d
+```
+部署完成后，即可通过 `https://your-domain` 访问你的管理后台。
+
 ## 🌟 核心理念
 
 传统的 API 代理通常作为 Client，将请求路由到拥有公网 IP 地址的 Server。如果你的高算力显卡（如 RTX 4090）躺在家里的局域网内，或者散布在不同云厂商的临时竞价实例（Spot Instances）上，将其统一成稳定可用的 API 极具挑战。

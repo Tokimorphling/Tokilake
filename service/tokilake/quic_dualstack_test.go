@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -19,8 +20,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+ 
+	"github.com/gorilla/websocket"
 
-	"one-api/controller"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -183,7 +185,36 @@ func TestClientRunOnceAutoFallsBackToWebSocket(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/tokilake/connect", controller.TokilakeConnect)
+	router.GET("/api/tokilake/connect", func(c *gin.Context) {
+		tokenKey, token, err := AuthenticateConnectRequest(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		}
+		wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("websocket upgrade failed: %v", err),
+			})
+			return
+		}
+		defer wsConn.Close()
+
+		remoteAddr := c.ClientIP()
+		if err = HandleGatewayConnection(c.Request.Context(), wsConn, token, tokenKey, remoteAddr); err != nil {
+			// ignore error in test
+		}
+	})
 	server := newIPv4HTTPServer(t, router)
 	defer server.Close()
 

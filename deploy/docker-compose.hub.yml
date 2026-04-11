@@ -1,0 +1,45 @@
+services:
+  hub:
+    image: ghcr.io/tokimorphling/tokilake:latest
+    container_name: tokilake-hub
+    restart: always
+    environment:
+      - TZ=${TZ:-UTC}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - USER_TOKEN_SECRET=${USER_TOKEN_SECRET}
+      - SQLITE_PATH=data/tokilake.db
+      # - REDIS_CONN_STRING=redis://redis:6379
+    volumes:
+      - ./data:/data
+    networks:
+      - tokilake-net
+
+  # redis:
+  #   image: redis:alpine
+  #   container_name: tokilake-redis
+  #   restart: always
+  #   networks:
+  #     - tokilake-net
+
+  caddy:
+    image: caddy:latest
+    container_name: tokilake-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # For QUIC/HTTP3
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    networks:
+      - tokilake-net
+    depends_on:
+      - hub
+
+networks:
+  tokilake-net:
+    driver: bridge

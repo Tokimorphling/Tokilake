@@ -19,6 +19,24 @@ You can visit the [Tokilake Demo](https://tokilake.abrdns.com/) to explore the c
 - **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
 - **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 
+## 🚀 One-Click Deployment (Recommended)
+
+The fastest way to deploy your own Tokilake Hub with automatic HTTPS and QUIC support:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Tokimorphling/Tokilake.git
+cd Tokilake/deploy
+
+# 2. Setup your environment
+cp .env.example .env
+# Edit .env and set your DOMAIN and SECRETS
+
+# 3. Launch
+docker compose -f docker-compose.hub.yml up -d
+```
+Access your dashboard at `https://your-domain`.
+
 
 ## 🌟 Core Concept
 
