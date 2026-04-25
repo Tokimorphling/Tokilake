@@ -29,6 +29,8 @@ RUN apt-get update \
 WORKDIR /src
 
 COPY go.mod go.sum ./
+COPY tokilake-core/go.mod tokilake-core/go.sum ./tokilake-core/
+COPY tokiame/go.mod ./tokiame/
 RUN go mod download
 
 COPY . .
@@ -43,6 +45,8 @@ FROM golang:1.25.0-bookworm AS tokiame-builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
+COPY tokilake-core/go.mod tokilake-core/go.sum ./tokilake-core/
+COPY tokiame/go.mod ./tokiame/
 RUN go mod download
 
 COPY . .
