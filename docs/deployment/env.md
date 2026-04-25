@@ -11,7 +11,7 @@ lastUpdated: true
 环境变量优先级高于配置文件。
 :::
 
-本页面可能未及时更新，具体值可参考 [配置文件](https://raw.githubusercontent.com/MartialBE/one-hub/refs/heads/main/config.example.yaml)。
+本页面可能未及时更新，具体值可参考 [配置文件](https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/config.example.yaml)。
 
 ## 配置文件转环境变量
 

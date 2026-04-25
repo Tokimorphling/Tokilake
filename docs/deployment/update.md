@@ -5,104 +5,63 @@ outline: deep
 lastUpdated: true
 ---
 
-# 自动升级
+# 升级
 
-### 宝塔用户
+## 生产部署更新
 
-如果你是宝塔面板部署，可以很方便添加计划任务
+如果你使用推荐的 `deploy/bootstrap-nginx-letsencrypt.sh` 部署，更新镜像时继续使用同一个脚本：
 
-添加计划任务-> Shell 脚本 -> 将以下内容粘贴进去即可。
+```bash
+cd /path/to/Tokilake
 
-使用 Docker Compose 部署的，记得修改`docker-compose.yml` 所在的目录
-
-```
-cd /www/wwwroot/
-```
-
-### 一般玩家
-
-此脚本可以在 Crontab 中使用，但请确认你的 Crontab 可以找到正确的 Docker 命令。建议使用绝对路径。
-
-配置 Crontab，每 5 分钟执行一次脚本：
-
-```
-*/5 * * * * /path/to/auto-update-lobe-chat.sh >> /path/to/auto-update-lobe-chat.log 2>&1
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update
 ```
 
-### Docker Compose 脚本
+脚本会复用已有配置和证书，默认拉取最新镜像，并重建容器，同时保留 nginx HTTPS / WebSocket / QUIC 配置。
 
-```sh
-# 拉取最新镜像，并将输出存储在变量中
-output=$(docker pull martialbe/one-api:latest 2>&1)
+如果只想用本地已有镜像重启容器：
 
-# 检查拉取命令是否成功执行
-if [ $? -ne 0 ]; then
-exit 1
-fi
-
-# 检查输出中是否包含特定字符串
-echo "$output" | grep -q "Image is up to date for martialbe/one-api:latest"
-
-# 如果镜像已经是最新的，则不执行任何操作
-if [ $? -eq 0 ]; then
-exit 0
-fi
-
-echo "检测到 one-api 更新"
-
-# 移除旧的容器
-echo "已移除: $(docker rm -f one-api)"
-
-# 你需要首先导航到 `docker-compose.yml` 所在的目录
-cd /www/wwwroot/
-
-# 运行新的容器
-echo "已启动: $(docker-compose up)"
-
-# 打印更新时间和版本
-echo "更新时间: $(date)"
-echo "版本: $(docker inspect martialbe/one-api:latest | grep 'org.opencontainers.image.version' | awk -F'"' '{print $4}')"
-
-# 清理未使用的镜像
-docker images | grep 'martialbe/one-api' | grep -v 'latest' | awk '{print $3}' | xargs -r docker rmi > /dev/null 2>&1
-echo "已移除旧的镜像."
+```bash
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update \
+  --no-pull
 ```
 
-### Docker 命令方式 脚本
+## 定时更新
 
-```sh
-# 拉取最新镜像，并将输出存储在变量中
-output=$(docker pull martialbe/one-api:latest 2>&1)
+可以用 crontab 定期执行更新脚本。例如每天凌晨 4 点更新：
 
-# 检查拉取命令是否成功执行
-if [ $? -ne 0 ]; then
-exit 1
-fi
-
-# 检查输出中是否包含特定字符串
-echo "$output" | grep -q "Image is up to date for martialbe/one-api:latest"
-
-# 如果镜像已经是最新的，则不执行任何操作
-if [ $? -eq 0 ]; then
-exit 0
-fi
-
-echo "检测到 one-api 更新"
-
-# 移除旧的容器
-echo "已移除: $(docker rm -f one-api)"
-
-# 你需要首先导航到 `docker-compose.yml` 所在的目录
-cd /www/wwwroot/
-
-# 运行新的容器 这里使用的是SQlite的docker命令，可以改成你自己想要的
-echo "已启动: $(docker run -d -p 3000:3000 --name one-api --restart always -e TZ=Asia/Shanghai -v /home/ubuntu/data/one-api:/data ghcr.io/martialbe/one-api)"
-
-# 打印更新时间和版本
-echo "更新时间: $(date)"
-echo "版本: $(docker inspect martialbe/one-api:latest | grep 'org.opencontainers.image.version' | awk -F'"' '{print $4}')"
-
-# 清理未使用的镜像
-docker images | grep 'martialbe/one-api' | grep -v 'latest' | awk '{print $3}' | xargs -r docker rmi > /dev/null 2>&1
-echo "已移除旧的镜像."
+```cron
+0 4 * * * cd /path/to/Tokilake && sudo ./deploy/bootstrap-nginx-letsencrypt.sh --domain api.example.com --update >> /var/log/tokilake-update.log 2>&1
 ```
+
+::: warning 注意
+首次申请证书时必须传 `--email`。已有证书后，`--update` 可以只传 `--domain`。
+:::
+
+## 本地 Docker 示例更新
+
+如果你使用的是文档里的最小本地 Docker 示例，可以手动拉取镜像并重建容器：
+
+```bash
+docker pull ghcr.io/tokimorphling/tokilake:latest
+docker rm -f tokilake-local
+
+docker run -d \
+  --name tokilake-local \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="replace-with-your-existing-user-token-secret" \
+  -e SESSION_SECRET="replace-with-your-existing-session-secret" \
+  -v tokilake-local-data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
+```
+
+本地重建容器时请复用原来的 `USER_TOKEN_SECRET`，否则已有用户令牌会失效。

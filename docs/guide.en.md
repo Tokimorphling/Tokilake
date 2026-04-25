@@ -6,29 +6,52 @@ Tokilake is a decentralized LLM API gateway that allows GPU worker nodes (Tokiam
 
 If you only want to run as a client (Tokiame), you can skip this section.
 
-### Run with Docker
+### Production deployment
 
-It is recommended to use Docker to run Tokilake:
+For a public production Hub with HTTPS, Let's Encrypt, nginx, Docker, and QUIC enabled, use the deployment script:
 
 ```bash
-docker pull ghcr.io/tokimorphling/tokilake:latest
+git clone https://github.com/Tokimorphling/Tokilake.git
+cd Tokilake
 
-docker run -d \
-  --name "tokilake-test-1" \
-  --restart always \
-  -p 3001:3000 \
-  -e TZ="UTC" \
-  -v "$(pwd)/deploy/config.local-test.yaml:/data/config.yaml:ro" \
-  -v "data:/data" \
-  "ghcr.io/tokimorphling/tokilake:latest"
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --email admin@example.com \
+  --sql-dsn 'postgres://user:password@127.0.0.1:5432/tokilake'
 ```
 
-> [!TIP]
-> Ensure that the `$(pwd)/deploy/config.local-test.yaml` configuration file has been modified according to your needs.
+To update the image later:
+
+```bash
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update
+```
+
+### Minimal local deployment
+
+For a local smoke test without nginx or certificates:
+
+```bash
+docker run -d \
+  --name tokilake-local \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e TZ=UTC \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  -v tokilake-local-data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
+```
+
+Open `http://localhost:19981` after the container starts.
 
 ## 2. Registration and Login
 
-1. Access the Tokilake dashboard (default is `http://localhost:3001` if running locally).
+1. Access the Tokilake dashboard (default is `http://localhost:19981` if using the local Docker example).
 2. In the dashboard, you will see **Private Groups**, which is the core mechanism of Tokilake.
 3. Click the **Create Group** button to create a private group.
 4. In the **Actions/Manage Group** page, you can manage invitations and group members.
@@ -59,7 +82,14 @@ export LLAMA_CACHE="unsloth/Qwen3.5-9B-GGUF"
 
 ### 3.2 Install and Configure Tokiame
 
-Install `tokiame` (if available via NPM):
+Install `tokiame` from this source checkout:
+
+```bash
+go install ./cmd/tokiame
+```
+
+If you are using a published release, the npm installer is also available:
+
 ```bash
 npm install -g @tokilake/tokiame
 ```

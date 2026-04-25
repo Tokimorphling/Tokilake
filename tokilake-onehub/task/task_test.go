@@ -16,7 +16,10 @@ import (
 	"one-api/common/config"
 	"one-api/common/logger"
 	"one-api/model"
+	"one-api/providers"
 	"one-api/relay/task/base"
+	"one-api/tokilake-onehub/gateway"
+	hubprovider "one-api/tokilake-onehub/provider"
 	"one-api/types"
 	tokilakesvc "tokilake-core"
 
@@ -24,8 +27,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"github.com/xtaci/smux"
-
-	tokilake_onehub "one-api/tokilake-onehub"
 )
 
 func TestTokiameVideoTaskInitValidation(t *testing.T) {
@@ -212,7 +213,7 @@ func TestGetVideoContentReturnsTerminalErrorsAndStreamsSuccess(t *testing.T) {
 	})
 	require.NoError(t, successTask.Update())
 
-	setupVideoTaskTunnelSession(t, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+	setupVideoTaskTunnelSession(t, gateway.Global.Manager, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
 		require.Equal(t, http.MethodGet, request.Method)
 		require.Equal(t, "/v1/videos/vid-success/content", request.Path)
 		require.Equal(t, "video-model", request.Model)
@@ -256,7 +257,7 @@ func TestUpdateTokiameVideoTasksRefreshesStatusFromWorker(t *testing.T) {
 	require.NoError(t, task.Update())
 	model.ChannelGroup.Load()
 
-	setupVideoTaskTunnelSession(t, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+	setupVideoTaskTunnelSession(t, gateway.Global.Manager, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
 		require.Equal(t, http.MethodGet, request.Method)
 		require.Equal(t, "/v1/videos/vid-refresh", request.Path)
 		require.Equal(t, "video-model", request.Model)
@@ -303,7 +304,9 @@ func setupTokiameVideoTestDB(t *testing.T) {
 	err := model.InitDB()
 	require.NoError(t, err)
 
-	tokilake_onehub.InitGateway()
+	previousGateway := gateway.Global
+	gateway.Global = tokilakesvc.NewGateway(nil, nil, nil, nil, tokilakesvc.NewSessionManager())
+	providers.RegisterProvider(config.ChannelTypeTokiame, hubprovider.ProviderFactory{})
 
 	sqlDB, err := model.DB.DB()
 	require.NoError(t, err)
@@ -313,6 +316,7 @@ func setupTokiameVideoTestDB(t *testing.T) {
 
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
+		gateway.Global = previousGateway
 		viper.Reset()
 		common.UsingPostgreSQL = false
 		common.UsingSQLite = false
@@ -393,7 +397,7 @@ func mustVideoJSON(t *testing.T, payload any) []byte {
 	return data
 }
 
-func setupVideoTaskTunnelSession(t *testing.T, channelID int, responder func(*tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte)) {
+func setupVideoTaskTunnelSession(t *testing.T, manager *tokilakesvc.SessionManager, channelID int, responder func(*tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte)) {
 	t.Helper()
 
 	clientConn, serverConn := net.Pipe()
@@ -402,7 +406,6 @@ func setupVideoTaskTunnelSession(t *testing.T, channelID int, responder func(*to
 	serverSession, err := smux.Server(serverConn, smux.DefaultConfig())
 	require.NoError(t, err)
 
-	manager := tokilakesvc.GetSessionManager()
 	session := &tokilakesvc.GatewaySession{
 		ID:        uint64(channelID),
 		Namespace: "video-test-" + strconv.Itoa(channelID),

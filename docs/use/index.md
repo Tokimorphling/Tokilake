@@ -10,7 +10,7 @@ lastUpdated: true
 系统本身开箱即用。
 
 你可以通过设置环境变量/命令行参数/配置文件进行配置。
-如果你要使用配置文件，请下载[config.example.yaml](https://raw.githubusercontent.com/MartialBE/one-api/main/config.example.yaml)，重命名为`config.yaml`，放在程序同目录下。
+如果你要使用配置文件，请下载[config.example.yaml](https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/config.example.yaml)，重命名为`config.yaml`，放在程序同目录下。
 
 等到系统启动后，使用 `root`(默认密码：123456) 登录系统并做进一步的配置。
 

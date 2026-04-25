@@ -10,7 +10,7 @@ hero:
       link: /deployment/index
     - theme: alt
       text: 项目地址
-      link: https://github.com/MartialBE/one-hub
+      link: https://github.com/Tokimorphling/Tokilake
 
 features:
   - title: 部署
@@ -37,7 +37,7 @@ features:
 
 <div style="text-align: center">
 
-[演示网站](https://one-hub.xiao5.info)
+[演示网站](https://tokilake.abrdns.com/)
 
 </div>
 

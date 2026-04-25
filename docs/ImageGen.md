@@ -70,7 +70,13 @@ If `generated.png` shows up within a few seconds, your backend is working.
 
 ## 3) Connect the backend to Tokilake with Tokiame
 
-Install `tokiame`:
+Install `tokiame` from this source checkout:
+
+```bash
+go install ./cmd/tokiame
+```
+
+If you are using a published release, the npm installer is also available:
 
 ```bash
 npm i -g @tokilake/tokiame

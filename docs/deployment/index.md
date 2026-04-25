@@ -37,250 +37,159 @@ lastUpdated: true
 openssl rand -hex 32
 ```
 
-## Docker 部署
+## 生产部署（推荐）
 
-当前仓库的官方容器构建产物只有一类：
+当前仓库只保留一条推荐生产部署路径：
 
-- `tokilake`: 主服务镜像，提供 Web 管理台、OpenAI 兼容 API、Tokilake 网关
+- 宿主机运行 `nginx`
+- Tokilake 运行在 Docker 容器里
+- Let's Encrypt 自动签发证书
+- `443/tcp` 提供 HTTPS / WebSocket
+- `443/udp` 通过 `nginx stream` 转发给 Tokilake QUIC
 
-推荐发布名示例：
+前置条件：
 
-- `ghcr.io/<your-org>/tokilake:latest`
+- DNS 已经指向当前服务器
+- 防火墙和云安全组已放行 `80/tcp`、`443/tcp`、`443/udp`
+- 服务器是 Debian/Ubuntu 风格系统，能够使用 `apt`
 
-如果你不想运行容器，也可以直接使用 GitHub Releases 里的预编译归档：
-
-- `tokilake_<version>_linux_amd64.tar.gz`
-
-每个 release 还会额外附带：
-
-- `SHA256SUMS-linux.txt`
-
-### 准备工作
-
-1. 创建数据目录：
+首次部署：
 
 ```bash
-# 创建主数据目录
-sudo mkdir -p /data/one-hub
-cd /data/one-hub
+git clone https://github.com/Tokimorphling/Tokilake.git
+cd Tokilake
+
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --email admin@example.com \
+  --sql-dsn 'postgres://user:password@127.0.0.1:5432/tokilake'
 ```
 
-2. 确保 Docker 已正确安装并启动：
+如果不传 `--sql-dsn`，Tokilake 会使用 SQLite，数据库文件保存在 `/opt/tokilake/data/one-api.db`。生产环境建议使用 PostgreSQL 或 MySQL。
+
+后续更新镜像：
 
 ```bash
-# 检查 Docker 状态
-sudo systemctl status docker
-# 如果未启动，则启动 Docker
-sudo systemctl start docker
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update
 ```
 
-::: warning 注意
+常用参数：
 
-- `-p 19981:19981` 中的第一个 `19981` 是宿主机的端口，可以根据需要进行修改。
-- 数据和日志将会保存在宿主机的 `/data/one-hub` 目录，请确保该目录存在且具有写入权限，或者更改为合适的目录。
-- 如果启动失败，请添加 `--privileged=true`，具体参考 [issue #482](https://github.com/songquanpeng/one-api/issues/482)。
-- 如果你的并发量较大，**务必**设置 `SQL_DSN`。
-  :::
+```bash
+--image ghcr.io/tokimorphling/tokilake:latest
+--app-dir /opt/tokilake
+--container-name tokilake
+--port 19981
+--redis redis://127.0.0.1:6379/0
+--no-pull
+```
 
-### 使用环境变量部署
+生成后的应用配置位于 `/opt/tokilake/config/config.yaml`，数据和日志位于 `/opt/tokilake/data`。
+
+## 最小本地部署
+
+如果只想在本机快速试跑，不需要 nginx、域名或证书：
+
+```bash
+docker run -d \
+  --name tokilake-local \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  -v tokilake-local-data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
+```
+
+启动后访问：
+
+```text
+http://localhost:19981
+```
+
+本地示例使用 SQLite，数据库和日志保存在 Docker volume `tokilake-local-data` 中。
+
+## 自定义 Docker 部署
+
+如果你不使用生产脚本，也可以直接运行镜像。容器默认会尝试读取 `/data/config.yaml`；如果该文件不存在，则使用环境变量和默认值。
 
 更多环境变量说明请参考 [环境变量](./env.md)。
 
-::: tip Docker 默认配置行为
-当前镜像默认启动参数里会带 `--config /data/config.yaml`，但这**不会自动把宿主机的配置文件传进容器**。
+SQLite 示例：
 
-也就是说：
-
-- 如果你挂载了 `/data/config.yaml`，容器会读取它
-- 如果你没有挂载这个文件，程序会跳过文件读取并继续使用环境变量
-:::
-
-#### 使用 SQLite
-
-```shell
-docker run -d -p 19981:19981 \
+```bash
+docker run -d \
   --name tokilake \
   --restart always \
+  -p 19981:19981 \
   -e TZ=Asia/Shanghai \
   -e PORT=19981 \
   -e GIN_MODE=release \
   -e SERVER_ADDRESS="https://api.example.com" \
-  -e USER_TOKEN_SECRET="user_token_secret" \
-  -e SESSION_SECRET="session_secret" \
-  -v /data/one-hub:/data \
-  ghcr.io/<your-org>/tokilake:latest
+  -e USER_TOKEN_SECRET="replace-with-a-stable-random-secret" \
+  -e SESSION_SECRET="replace-with-a-stable-random-secret" \
+  -v /opt/tokilake/data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
 ```
 
-#### 使用 MySQL
+PostgreSQL 示例：
 
-在 SQLite 的基础上，添加 `-e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi"`。请根据实际情况修改数据库连接参数。
-
-```shell
-docker run -d -p 19981:19981 \
+```bash
+docker run -d \
   --name tokilake \
   --restart always \
+  -p 19981:19981 \
   -e TZ=Asia/Shanghai \
   -e PORT=19981 \
   -e GIN_MODE=release \
   -e SERVER_ADDRESS="https://api.example.com" \
-  -e USER_TOKEN_SECRET="user_token_secret" \
-  -e SESSION_SECRET="session_secret" \
-  -e SQL_DSN="root:123456@tcp(localhost:3306)/oneapi" \
-  -v /data/one-hub:/data \
-  ghcr.io/<your-org>/tokilake:latest
-
+  -e USER_TOKEN_SECRET="replace-with-a-stable-random-secret" \
+  -e SESSION_SECRET="replace-with-a-stable-random-secret" \
+  -e SQL_DSN="postgres://user:password@db.example.com:5432/tokilake" \
+  -v /opt/tokilake/data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
 ```
 
-#### 使用 PostgreSQL
+配置文件示例：
 
-```shell
-docker run -d -p 19981:19981 \
+```bash
+mkdir -p /opt/tokilake/config /opt/tokilake/data
+cp ./deploy/config.production-nginx.yaml /opt/tokilake/config/config.yaml
+
+docker run -d \
   --name tokilake \
   --restart always \
-  -e TZ=Asia/Shanghai \
-  -e PORT=19981 \
-  -e GIN_MODE=release \
-  -e SERVER_ADDRESS="https://api.example.com" \
-  -e USER_TOKEN_SECRET="user_token_secret" \
-  -e SESSION_SECRET="session_secret" \
-  -e SQL_DSN="postgres://postgres:123456@localhost:5432/oneapi" \
-  -v /data/one-hub:/data \
-  ghcr.io/<your-org>/tokilake:latest
+  -p 19981:19981 \
+  -v /opt/tokilake/data:/data \
+  -v /opt/tokilake/config/config.yaml:/data/config.yaml:ro \
+  ghcr.io/tokimorphling/tokilake:latest
 ```
 
-部署完毕后，访问 `http://localhost:19981` 或你通过反向代理暴露的正式域名即可。
+## 源码或二进制运行
 
-### 使用配置文件部署
-
-1. 下载配置文件模板：
+从源码构建：
 
 ```bash
-cd /data/one-hub
-wget https://raw.githubusercontent.com/MartialBE/one-hub/refs/heads/main/config.example.yaml -O config.yaml
+git clone https://github.com/Tokimorphling/Tokilake.git
+cd Tokilake
+task tokilake
+./dist/tokilake --config ./config.example.yaml --port 19981 --log-dir ./logs
 ```
 
-2. 根据需要修改配置文件内容，常用配置项包括：
-
-```yaml
-# 必要配置
-user_token_secret: "your-secret-key" # 用户令牌密钥
-session_secret: "your-session-secret" # 会话密钥
-
-# 数据库配置
-sql_dsn: "root:123456@tcp(localhost:3306)/oneapi" # MySQL配置示例
-```
-
-3. 运行容器
-
-```shell
-docker run -d -p 19981:19981 \
-  --name tokilake \
-  --restart always \
-  -e TZ=Asia/Shanghai \
-  -e PORT=19981 \
-  -v /data/one-hub:/data \
-  ghcr.io/<your-org>/tokilake:latest
-```
-
-如果你希望使用配置文件，请将它挂载到容器内的 `/data/config.yaml`。容器默认启动命令会自动尝试读取该文件。
-
-例如：
+如果没有安装 `task`，也可以在已经构建好前端资源的情况下执行：
 
 ```bash
-docker run -d -p 19981:19981 \
-  --name tokilake \
-  --restart always \
-  -v /data/one-hub/config.yaml:/data/config.yaml:ro \
-  -v /data/one-hub:/data \
-  ghcr.io/<your-org>/tokilake:latest
+go build -o dist/tokilake .
+./dist/tokilake --config ./config.example.yaml --port 19981 --log-dir ./logs
 ```
 
-如果你选择纯环境变量方式部署，则不需要挂载 `/data/config.yaml`。
-
-## Docker Compose 部署
-
-### 准备工作
-
-1. 创建必要的目录结构：
-
-```bash
-# 创建主目录
-sudo mkdir -p /data/one-hub
-cd /data/one-hub
-# 创建子目录
-mkdir data
-```
-
-2. 下载配置文件：
-
-```bash
-# 下载 docker-compose 配置文件
-wget https://raw.githubusercontent.com/MartialBE/one-api/main/docker-compose.yml
-
-
-```
-
-3. 编辑 `docker-compose.yml` 文件，修改环境变量值。
-
-如果使用配置文件，执行下面命令，并删除 `docker-compose.yml` 文件中的 `SQL_DSN`/`REDIS_CONN_STRING`/`SESSION_SECRET` / `USER_TOKEN_SECRET` 参数：
-
-```shell
-# 下载应用配置文件模板
-wget https://raw.githubusercontent.com/MartialBE/one-api/main/config.example.yaml -O ./data/config.yaml
-```
-
-### 启动服务
-
-```shell
-docker-compose up -d
-```
-
-启动服务后，你可以通过运行以下命令来查看部署状态：
-
-```shell
-docker-compose ps
-```
-
-请确保所有的服务都已经成功启动，并且状态为 'Up'。
-
-部署完毕后，访问 `http://localhost:19981` 或你通过反向代理暴露的正式域名即可。
-
-## 手动部署
-
-1. **获取源码**：从 [GitHub Releases](https://github.com/MartialBE/one-hub/releases/latest) 下载最新的可执行文件，或者直接从源码编译。如果你选择编译源码，可以使用以下命令：
-
-   ```shell
-   git clone https://github.com/MartialBE/one-hub.git
-   ```
-
-2. **构建**：进入代码目录，构建：
-
-   ```shell
-   cd one-hub
-   make
-   ```
-
-3. **运行应用**：为构建的应用添加执行权限，并运行：
-
-   ```shell
-   task tokilake
-   chmod u+x dist/tokilake
-   ./dist/tokilake --config ./dist/config.yaml --port 19981 --log-dir ./dist/logs
-   ```
-
-4. **访问应用**：在浏览器中访问 `http://localhost:19981` 并登录。初始账号用户名为 `root`，密码为 `123456`。
-
-5. **重新编译**：如果需要重新编译，可以使用以下命令：
-
-   ```shell
-   make clean
-   make
-   task tokilake
-   ```
-
-如果你需要运行 Tokiame worker，请参考 [Tokilake 与 Tokiame](./tokilake-tokiame.md)。当前更推荐通过源码目录执行 `go install ./cmd/tokiame` 或 `go run ./cmd/tokiame`。
-
-请确保在执行以上步骤时，你的环境已经安装了必要的工具，如 Git、Node.js、yarn 和 Go。
+如果你需要运行 Tokiame worker，请参考 [Tokilake 与 Tokiame](./tokilake-tokiame.md)。
 
 ## 多机部署
 

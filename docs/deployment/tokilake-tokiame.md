@@ -11,6 +11,8 @@ lastUpdated: true
 
 ## 能力范围
 
+- `tokilake-core` 是独立的协议、隧道、会话和网关核心，不依赖 onehub 数据模型。
+- `tokilake-onehub` 是当前仓库内置的 onehub 适配层，负责把 worker 映射为 onehub 渠道、Provider 和视频任务。
 - Tokiame 通过 `GET /api/tokilake/connect` 连接网关。
 - 连接成功后会自动创建或更新一个 `Tokiame/<namespace>` 渠道。
 - 支持的标准接口包括：
@@ -42,7 +44,7 @@ lastUpdated: true
 Tokilake 网关已经集成在主服务中，正常启动主程序即可：
 
 ```bash
-go run .
+go run . --port 19981
 ```
 
 或使用你现有的部署方式启动 Tokilake。
@@ -58,7 +60,7 @@ docker run -d -p 19981:19981 \
   -e USER_TOKEN_SECRET="user_token_secret" \
   -e SESSION_SECRET="session_secret" \
   -v $(pwd)/data:/data \
-  ghcr.io/<your-org>/tokilake:latest
+  ghcr.io/tokimorphling/tokilake:latest
 ```
 
 ## 启动 Tokiame
@@ -82,13 +84,13 @@ tokiame
 ```
 
 ::: warning 说明
-当前仓库的 `go.mod` 模块路径仍然是 `one-api`，所以暂时还不能直接使用 `go install github.com/<owner>/<repo>/cmd/tokiame@latest` 这种远程安装形式。当前可用方式仍然是先 `git clone` 仓库，再在源码目录里执行 `go install ./cmd/tokiame`。
+当前 `cmd/tokiame` 依赖仓库内的 workspace-local `tokiame` 模块，因此最稳妥的安装方式仍然是先 `git clone` 仓库，再在源码目录中执行 `go install ./cmd/tokiame`。如果你使用的是已经发布的版本，也可以通过 npm 安装器或预编译二进制安装。
 :::
 
 最小环境变量示例：
 
 ```bash
-export TOKIAME_GATEWAY_URL="ws://127.0.0.1:3000/api/tokilake/connect"
+export TOKIAME_GATEWAY_URL="ws://127.0.0.1:19981/api/tokilake/connect"
 export TOKIAME_TOKEN="sk-your-user-token"
 export TOKIAME_NAMESPACE="demo-worker"
 export TOKIAME_GROUP="demo-group"
@@ -259,6 +261,11 @@ Tokiame 本地后端需要实现以下兼容接口：
 1. `git clone` 当前仓库
 2. 在源码目录中执行 `go install ./cmd/tokiame`
 3. 把真实配置写到 `~/.tokilake/tokiame.json`，或用环境变量直接启动
+
+如果你使用的是已发布版本，也可以选择：
+
+- `npm install -g @tokilake/tokiame`
+- 下载 GitHub Releases 中的预编译 `tokiame` 归档
 
 默认配置路径是：
 

@@ -13,5 +13,5 @@ lastUpdated: true
    - 例子：`--log-dir ./logs`
 3. `--version`: 打印系统版本号并退出。
 4. `--help`: 查看命令的使用帮助和参数说明。
-5. `--config <config_file>`: 指定配置文件路径，程序将会读取该文件中的配置。配置文件详见[config.example.yaml](https://raw.githubusercontent.com/MartialBE/one-api/main/config.example.yaml)
+5. `--config <config_file>`: 指定配置文件路径，程序将会读取该文件中的配置。配置文件详见[config.example.yaml](https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/config.example.yaml)
    - 例子：`--config ./config.yaml`

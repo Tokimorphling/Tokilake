@@ -10,22 +10,27 @@ import (
 
 	"one-api/common/logger"
 	"one-api/model"
+	"one-api/tokilake-onehub/gateway"
 	"one-api/types"
 	tokilakesvc "tokilake-core"
 
 	"github.com/stretchr/testify/require"
 	"github.com/xtaci/smux"
-
-	tokilake_onehub "one-api/tokilake-onehub"
 )
 
 func TestProviderVideoMethodsUseTunnelEndpoints(t *testing.T) {
-	tokilake_onehub.InitGateway()
 	logger.SetupLogger()
 
 	channelID := 88001
+	manager := tokilakesvc.NewSessionManager()
+	previousGateway := gateway.Global
+	gateway.Global = tokilakesvc.NewGateway(nil, nil, nil, nil, manager)
+	t.Cleanup(func() {
+		gateway.Global = previousGateway
+	})
+
 	requests := make(chan *tokilakesvc.TunnelRequest, 3)
-	setupVideoTunnelSession(t, channelID, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+	setupVideoTunnelSession(t, manager, channelID, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
 		requests <- request
 
 		switch request.Path {
@@ -137,7 +142,7 @@ func mustJSON(t *testing.T, payload any) []byte {
 	return data
 }
 
-func setupVideoTunnelSession(t *testing.T, channelID int, responder func(*tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte)) {
+func setupVideoTunnelSession(t *testing.T, manager *tokilakesvc.SessionManager, channelID int, responder func(*tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte)) {
 	t.Helper()
 
 	clientConn, serverConn := net.Pipe()
@@ -146,7 +151,6 @@ func setupVideoTunnelSession(t *testing.T, channelID int, responder func(*tokila
 	serverSession, err := smux.Server(serverConn, smux.DefaultConfig())
 	require.NoError(t, err)
 
-	manager := tokilakesvc.GetSessionManager()
 	session := &tokilakesvc.GatewaySession{
 		ID:        uint64(channelID),
 		Namespace: "video-test-provider",

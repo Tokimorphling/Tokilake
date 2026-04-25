@@ -26,16 +26,43 @@ Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/Tokimorphling/Tokilake.git
-cd Tokilake/deploy
+cd Tokilake
 
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 文件，设置你的域名 (DOMAIN) 和 密钥 (SECRETS)
-
-# 3. 启动
-docker compose -f docker-compose.hub.yml up -d
+# 2. 使用宿主机 nginx + Docker + Let's Encrypt 部署生产环境
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --email admin@example.com \
+  --sql-dsn 'postgres://user:password@127.0.0.1:5432/tokilake'
 ```
-部署完成后，即可通过 `https://your-domain` 访问你的管理后台。
+
+部署完成后，即可通过 `https://api.example.com` 访问你的管理后台。
+
+后续更新镜像：
+
+```bash
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update
+```
+
+如果只想在本机快速试跑，不需要 nginx 和证书：
+
+```bash
+docker run -d \
+  --name tokilake-local \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e TZ=Asia/Shanghai \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  -v tokilake-local-data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
+```
+
+然后访问 `http://localhost:19981`。
 
 ## 🌟 核心理念
 
@@ -99,6 +126,8 @@ graph TB
 
 - **`Tokilake` (网关/Hub级别)**: 统一的流量入口。接收用户的标准 HTTP API 请求，并将其多路复用到对应的边缘节点。
 - **`Tokiame` (节点/Worker级别)**: 边缘侧轻量级客户端。通过 WebSocket（基于 `xtaci/smux` 多路复用）或 QUIC 协议维持极低延迟的反向隧道。
+- **`tokilake-core`**: 独立的协议、隧道、会话和网关核心，不依赖 onehub 数据模型。
+- **`tokilake-onehub`**: onehub 适配层，负责把连接进来的 worker 映射为渠道、Provider 和视频任务。
 
 ### 传输协议选择
 

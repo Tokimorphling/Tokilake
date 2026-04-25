@@ -4,7 +4,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: "Tokilake 文档",
   description: "Tokilake 文档",
-  head: [['link', { rel: 'icon', href: 'https://raw.githubusercontent.com/MartialBE/Tokilake/main/web/src/assets/images/logo.svg' }]],
+  head: [['link', { rel: 'icon', href: 'https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/web/src/assets/images/logo.svg' }]],
   lastUpdated: true,
   markdown: {
     math: true,
@@ -16,7 +16,7 @@ export default defineConfig({
     search: {
       provider: 'local'
     },
-    logo: { light: 'https://raw.githubusercontent.com/MartialBE/Tokilake/main/web/src/assets/images/logo.svg', dark: 'https://github.com/MartialBE/Tokilake/assets/42402987/c4125d1a-5577-446d-ba15-2a71c52140c1', alt: 'Tokilake Logo' },
+    logo: { light: 'https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/web/src/assets/images/logo.svg', dark: 'https://raw.githubusercontent.com/Tokimorphling/Tokilake/main/web/src/assets/images/logo.svg', alt: 'Tokilake Logo' },
     // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: '首页', link: '/' },
@@ -28,6 +28,7 @@ export default defineConfig({
         text: '部署',
         items: [
           { text: '部署说明', link: '/deployment/index' },
+          { text: 'Tokilake 与 Tokiame', link: '/deployment/tokilake-tokiame' },
           { text: '环境变量', link: '/deployment/env' },
           { text: '图床配置', link: '/deployment/storage' },
           { text: '自动升级', link: '/deployment/update' },
@@ -58,14 +59,14 @@ export default defineConfig({
       {
         text: '其他',
         items: [
-          { text: '更新日志', link: 'https://github.com/MartialBE/Tokilake/releases' },
-          { text: '请我喝杯咖啡', link: 'https://github.com/MartialBE/Tokilake/wiki/Coffee' }
+          { text: '更新日志', link: 'https://github.com/Tokimorphling/Tokilake/releases' },
+          { text: '请我喝杯咖啡', link: 'https://github.com/Tokimorphling/Tokilake/wiki/Coffee' }
         ]
       }
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/MartialBE/Tokilake' }
+      { icon: 'github', link: 'https://github.com/Tokimorphling/Tokilake' }
     ]
   }
 })

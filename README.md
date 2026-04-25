@@ -26,16 +26,43 @@ The fastest way to deploy your own Tokilake Hub with automatic HTTPS and QUIC su
 ```bash
 # 1. Clone the repository
 git clone https://github.com/Tokimorphling/Tokilake.git
-cd Tokilake/deploy
+cd Tokilake
 
-# 2. Setup your environment
-cp .env.example .env
-# Edit .env and set your DOMAIN and SECRETS
-
-# 3. Launch
-docker compose -f docker-compose.hub.yml up -d
+# 2. Production deploy with host nginx + Docker + Let's Encrypt
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --email admin@example.com \
+  --sql-dsn 'postgres://user:password@127.0.0.1:5432/tokilake'
 ```
-Access your dashboard at `https://your-domain`.
+
+Access your dashboard at `https://api.example.com`.
+
+To update the image later:
+
+```bash
+sudo ./deploy/bootstrap-nginx-letsencrypt.sh \
+  --domain api.example.com \
+  --update
+```
+
+For a local-only smoke test without nginx or certificates:
+
+```bash
+docker run -d \
+  --name tokilake-local \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e TZ=UTC \
+  -e PORT=19981 \
+  -e GIN_MODE=release \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  -v tokilake-local-data:/data \
+  ghcr.io/tokimorphling/tokilake:latest
+```
+
+Then open `http://localhost:19981`.
 
 
 ## 🌟 Core Concept
@@ -100,6 +127,8 @@ graph TB
 
 - **`Tokilake` (Gateway/Hub Level)**: The unified ingress for traffic. It receives standard HTTP API requests from end-users and multiplexes them to the corresponding edge nodes.
 - **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse tunnel via either WebSocket (with `xtaci/smux` multiplexing) or QUIC.
+- **`tokilake-core`**: The standalone protocol, tunnel, session, and gateway core. It has no onehub database dependency.
+- **`tokilake-onehub`**: The onehub adapter that maps connected workers into channels, providers, and video tasks.
 
 ### Transport Options
 
@@ -133,4 +162,4 @@ QUIC is ideal for scenarios requiring lower latency and better connection resili
 
 ## Legacy README
 
-[Legacy README (historical introduction and compatibility notes)](./README.en.legacy.md)
+[Legacy README (historical introduction and compatibility notes)](./README.legacy.md)

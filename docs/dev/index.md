@@ -78,37 +78,36 @@ Usage of ./dist/one-api:
 
 ### 编译流程
 
-项目根目录已经提供了 docker 构建的 dockerfile
+项目根目录已经提供了 Dockerfile，可以分别构建 Tokilake Hub 和 Tokiame worker 镜像。
 
 ```bash
-# cd one-hub
-docker build -t one-hub:dev .
+docker build --target tokilake -t tokilake:dev .
+docker build --target tokiame -t tokiame:dev .
 ```
 
 编译成功后，运行
 
 ```bash
-docker images | grep one-hub:dev
+docker images | grep 'tokilake:dev\|tokiame:dev'
 ```
 
 你应当能找到刚刚编译的镜像，注意与项目官方镜像区分名称。
 
-当然你也可以选择修改 Dockerfile，使用 `docker compose build` 进行编译。
-
 ### 运行说明
 
-项目根目录提供了一份 [`docker-compose.yaml`](https://github.com/MartialBE/one-hub/blob/main/docker-compose.yml) 文件。你应当根据上一步 `docker build` 时采用的镜像名称进行修改，比如将`martialbe/one-api:latest`替换`one-hub:dev`。当然你也可以直接利用 `docker compose` 进行 build：
+Hub 本地运行示例：
 
-```yaml
-image: martialbe/one-api:latest
+```bash
+docker run -d \
+  --name tokilake-dev \
+  --restart unless-stopped \
+  -p 19981:19981 \
+  -e PORT=19981 \
+  -e SERVER_ADDRESS="http://localhost:19981" \
+  -e USER_TOKEN_SECRET="$(openssl rand -hex 32)" \
+  -e SESSION_SECRET="$(openssl rand -hex 32)" \
+  -v tokilake-dev-data:/data \
+  tokilake:dev
 ```
 
-替换为
-
-```yaml
-build:
-  dockerfile: Dockerfile
-  context: .
-```
-
-然后进行 `docker compose build` 即可。
+Tokiame 本地运行需要准备配置文件，具体参考 [Tokilake 与 Tokiame](../deployment/tokilake-tokiame.md)。

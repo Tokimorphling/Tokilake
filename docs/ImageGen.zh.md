@@ -70,7 +70,13 @@ print("Saved:", output_path)
 
 ## 3) 通过 Tokiame 将后端接入 Tokilake
 
-安装 `tokiame`：
+从当前源码目录安装 `tokiame`：
+
+```bash
+go install ./cmd/tokiame
+```
+
+如果你使用的是已发布版本，也可以通过 npm 安装器安装：
 
 ```bash
 npm i -g @tokilake/tokiame
