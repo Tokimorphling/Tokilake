@@ -11,7 +11,7 @@ import (
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/model"
-	tokilake "tokilake-core"
+	tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"gorm.io/gorm"
 )

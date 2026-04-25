@@ -1,5 +1,5 @@
 package gateway
 
-import tokilake "tokilake-core"
+import tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 var Global *tokilake.Gateway

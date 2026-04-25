@@ -10,7 +10,7 @@ import (
 	"one-api/common/requester"
 	"one-api/providers/openai"
 	"one-api/types"
-	tokilakesvc "tokilake-core"
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 )
 
 func (p *Provider) CreateVideo(request *types.VideoRequest) (*types.VideoTaskObject, *types.OpenAIErrorWithStatusCode) {

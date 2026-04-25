@@ -15,7 +15,7 @@ import (
 	"encoding/json"
 	"unsafe"
 
-	tokilake "tokilake-core"
+	tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 )
 
 const tunnelChunkSize = 32 * 1024

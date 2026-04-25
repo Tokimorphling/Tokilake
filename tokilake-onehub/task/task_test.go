@@ -21,7 +21,7 @@ import (
 	"one-api/tokilake-onehub/gateway"
 	hubprovider "one-api/tokilake-onehub/provider"
 	"one-api/types"
-	tokilakesvc "tokilake-core"
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"

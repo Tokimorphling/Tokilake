@@ -12,7 +12,7 @@ import (
 	"one-api/model"
 	"one-api/tokilake-onehub/gateway"
 	"one-api/types"
-	tokilakesvc "tokilake-core"
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"github.com/stretchr/testify/require"
 	"github.com/xtaci/smux"

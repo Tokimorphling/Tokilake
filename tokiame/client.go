@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"encoding/json"
-	tokilake "tokilake-core"
+	tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"

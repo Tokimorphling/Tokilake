@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"one-api/model"
-	tokilake "tokilake-core"
+	tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 )
 
 type HubAuthenticator struct{}

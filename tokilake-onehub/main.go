@@ -17,7 +17,7 @@ import (
 	hubprovider "one-api/tokilake-onehub/provider"
 	hubtask "one-api/tokilake-onehub/task"
 
-	tokilake "tokilake-core"
+	tokilake "github.com/Tokimorphling/Tokilake/tokilake-core"
 )
 
 func InitGateway() func(ctx context.Context) (func(), error) {

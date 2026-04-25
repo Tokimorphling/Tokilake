@@ -16,7 +16,7 @@ import (
 	"one-api/providers/openai"
 	"one-api/tokilake-onehub/gateway"
 	"one-api/types"
-	tokilakesvc "tokilake-core"
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"github.com/gin-gonic/gin"
 )

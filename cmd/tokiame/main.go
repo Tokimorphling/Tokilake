@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"one-api/pkg/log"
-	tokiame "tokiame"
+	tokiame "github.com/Tokimorphling/Tokilake/tokiame"
 )
 
 func main() {
