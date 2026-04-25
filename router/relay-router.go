@@ -7,7 +7,6 @@ import (
 	"one-api/relay/task"
 	"one-api/relay/task/kling"
 	"one-api/relay/task/suno"
-	"one-api/relay/task/tokiamevideo"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,9 +37,6 @@ func setOpenAIRouter(router *gin.Engine) {
 		relayV1Router.POST("/chat/completions", relay.Relay)
 		relayV1Router.POST("/responses", relay.Relay)
 		relayV1Router.POST("/videos", task.RelayTaskSubmit)
-		relayV1Router.GET("/videos", tokiamevideo.ListVideos)
-		relayV1Router.GET("/videos/:id/content", tokiamevideo.GetVideoContent)
-		relayV1Router.GET("/videos/:id", tokiamevideo.GetVideoByID)
 		// relayV1Router.POST("/edits", controller.Relay)
 		relayV1Router.POST("/images/generations", relay.Relay)
 		relayV1Router.POST("/images/edits", relay.Relay)

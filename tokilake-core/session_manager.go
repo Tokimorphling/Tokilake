@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"one-api/model"
 )
 
 var errNamespaceAlreadyConnected = errors.New("namespace already connected")
@@ -22,24 +20,24 @@ type InFlightRequest struct {
 }
 
 type GatewaySession struct {
-	ID            uint64
-	Token         *model.Token
-	TokenKey      string
-	RemoteAddr    string
-	ConnectedAt   time.Time
-	WorkerID      int
-	ChannelID     int
-	Namespace     string
-	Group         string
-	BackendType   string
-	Models        []string
-	Status        int
-	Transport     string
-	Tunnel        TunnelSession
-	Control       TunnelStream
+	ID          uint64
+	Token       *Token
+	TokenKey    string
+	RemoteAddr  string
+	ConnectedAt time.Time
+	WorkerID    int
+	ChannelID   int
+	Namespace   string
+	Group       string
+	BackendType string
+	Models      []string
+	Status      int
+	Transport   string
+	Tunnel      TunnelSession
+	Control     TunnelStream
 	Authenticated bool
 
-	controlCodec *controlCodec
+	ControlCodec *ControlCodec
 	closeOnce    sync.Once
 }
 
@@ -71,7 +69,7 @@ func NewSessionManager() *SessionManager {
 	}
 }
 
-func (m *SessionManager) NewGatewaySession(token *model.Token, tokenKey string, remoteAddr string, transport string, tunnel TunnelSession) *GatewaySession {
+func (m *SessionManager) NewGatewaySession(token *Token, tokenKey string, remoteAddr string, transport string, tunnel TunnelSession) *GatewaySession {
 	return &GatewaySession{
 		ID:            m.nextID.Add(1),
 		Token:         token,

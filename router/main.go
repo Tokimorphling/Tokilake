@@ -12,9 +12,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+var pluginRouters []func(router *gin.Engine)
+
+func RegisterPluginRouter(f func(router *gin.Engine)) {
+	pluginRouters = append(pluginRouters, f)
+}
+
 func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 	SetApiRouter(router)
-	SetTokilakeRouter(router)
 	SetDashboardRouter(router)
 	SetRelayRouter(router)
 	// 初始化MCP服务器与Gin集成
@@ -22,6 +27,11 @@ func SetRouter(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 		logger.SysLog("Enable MCP Server")
 		SetMcpRouter(router)
 	}
+
+	for _, f := range pluginRouters {
+		f(router)
+	}
+
 	frontendBaseUrl := viper.GetString("frontend_base_url")
 	if config.IsMasterNode && frontendBaseUrl != "" {
 		frontendBaseUrl = ""

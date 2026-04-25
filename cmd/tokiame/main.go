@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"one-api/pkg/log"
-	"one-api/service/tokilake"
+	tokiame "tokiame"
 )
 
 func main() {
@@ -25,7 +25,7 @@ func main() {
 
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stdout, tokiameLogLevel(), true)))
 
-	config, err := tokilake.LoadClientConfigFromEnv()
+	config, err := tokiame.LoadClientConfigFromEnv()
 	if err != nil {
 		log.Crit("load tokiame config failed", "err", err)
 	}
@@ -43,7 +43,7 @@ func main() {
 		"backend_type", config.ControlPlaneBackendType(),
 	)
 
-	client := tokilake.NewClient(config)
+	client := tokiame.NewClient(config)
 	if err = client.Run(ctx); err != nil {
 		log.Crit("tokiame exited with error", "err", err)
 	}

@@ -20,6 +20,12 @@ import (
 
 var DB *gorm.DB
 
+var pluginModels []interface{}
+
+func RegisterPluginModel(model interface{}) {
+	pluginModels = append(pluginModels, model)
+}
+
 func SetupDB() {
 	err := InitDB()
 	if err != nil {
@@ -221,6 +227,13 @@ func InitDB() (err error) {
 			}
 
 			err = db.AutoMigrate(&StatisticsMonth{})
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, m := range pluginModels {
+			err = db.AutoMigrate(m)
 			if err != nil {
 				return err
 			}

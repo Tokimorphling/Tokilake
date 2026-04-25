@@ -25,7 +25,7 @@ import (
 	"one-api/relay/task"
 	"one-api/router"
 	"one-api/safty"
-	"one-api/service/tokilake"
+	tokilake_onehub "one-api/tokilake-onehub"
 	"time"
 
 	"github.com/gin-contrib/sessions"
@@ -39,6 +39,12 @@ var buildFS embed.FS
 
 //go:embed web/build/index.html
 var indexPage []byte
+
+var startHooks []func(ctx context.Context) (func(), error)
+
+func RegisterStartHook(f func(ctx context.Context) (func(), error)) {
+	startHooks = append(startHooks, f)
+}
 
 func main() {
 	cli.InitCli()
@@ -142,23 +148,25 @@ func initHttpServer() {
 	})
 	server.Use(sessions.Sessions("session", store))
 
+	RegisterStartHook(tokilake_onehub.Register(server))
 	router.SetRouter(server, buildFS, indexPage)
+
 	port := viper.GetString("port")
 
 	quicCtx, stopQUIC := context.WithCancel(context.Background())
 	defer stopQUIC()
 
-	closeQUICGateway, err := tokilake.StartConfiguredQUICGateway(quicCtx)
-	if err != nil {
-		logger.FatalLog("failed to start QUIC gateway: " + err.Error())
-	}
-	defer func() {
-		if closeQUICGateway != nil {
-			_ = closeQUICGateway()
+	for _, hook := range startHooks {
+		closeFunc, err := hook(quicCtx)
+		if err != nil {
+			logger.FatalLog("failed to execute start hook: " + err.Error())
 		}
-	}()
+		if closeFunc != nil {
+			defer closeFunc()
+		}
+	}
 
-	err = runHTTPServer(server, port)
+	err := runHTTPServer(server, port)
 	if err != nil {
 		logger.FatalLog("failed to start HTTP server: " + err.Error())
 	}

@@ -37,7 +37,6 @@ import (
 	"one-api/providers/stabilityAI"
 	"one-api/providers/suno"
 	"one-api/providers/tencent"
-	"one-api/providers/tokiame"
 	"one-api/providers/vertexai"
 	"one-api/providers/xAI"
 	"one-api/providers/xunfei"
@@ -94,7 +93,6 @@ func init() {
 		config.ChannelTypeAzureDatabricks: azuredatabricks.AzureDatabricksProviderFactory{},
 		config.ChannelTypeAzureV1:         azure_v1.AzureV1ProviderFactory{},
 		config.ChannelTypeXAI:             xAI.XAIProviderFactory{},
-		config.ChannelTypeTokiame:         tokiame.ProviderFactory{},
 	}
 }
 
@@ -116,4 +114,9 @@ func GetProvider(channel *model.Channel, c *gin.Context) base.ProviderInterface 
 	provider.SetContext(c)
 
 	return provider
+}
+
+// RegisterProvider 注册供应商工厂
+func RegisterProvider(channelType int, factory ProviderFactory) {
+	providerFactories[channelType] = factory
 }

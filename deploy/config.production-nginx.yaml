@@ -28,8 +28,9 @@ user_token_secret: "replace-with-at-least-32-random-characters"
 # Leave empty unless you intentionally need a custom alphabet with unique characters only.
 hashids_salt: ""
 
-# Replace with your real database in production.
-sql_dsn: "postgres://user:password@127.0.0.1:5432/tokilake"
+# Pass --sql-dsn to bootstrap-nginx-letsencrypt.sh for PostgreSQL/MySQL.
+# Empty value falls back to sqlite_path.
+sql_dsn: ""
 sqlite_path: "one-api.db"
 redis_conn_string: ""
 

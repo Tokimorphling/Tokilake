@@ -20,9 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
- 
-	"github.com/gorilla/websocket"
 
+	"github.com/gorilla/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
