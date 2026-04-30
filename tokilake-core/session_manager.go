@@ -185,6 +185,12 @@ func (m *SessionManager) cancelRequestsForSession(sessionID uint64) {
 	}
 }
 
+func (m *SessionManager) SessionCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.byNamespace)
+}
+
 var defaultSessionManager = NewSessionManager()
 
 func GetSessionManager() *SessionManager {

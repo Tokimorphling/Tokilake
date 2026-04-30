@@ -1,0 +1,20 @@
+{
+  "gateway_url": "ws://localhost:8080/connect",
+  "token": "sk-test",
+  "namespace": "test-worker",
+  "node_name": "local-test",
+  "group": "default",
+  "transport_mode": "websocket",
+  "model_targets": {
+    "gpt-3.5-turbo": {
+      "url": "http://localhost:11434",
+      "backend_type": "openai"
+    },
+    "gpt-4": {
+      "url": "http://localhost:11434",
+      "backend_type": "openai"
+    }
+  },
+  "heartbeat_interval_seconds": 15,
+  "reconnect_delay_seconds": 5
+}
