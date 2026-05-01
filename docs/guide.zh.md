@@ -138,5 +138,6 @@ npm install -g @tokilake/tokiame
 
 - [图像生成指南](./ImageGen.zh.md) — 使用专用 `/v1/images/generations` 端点
 - [通过 Chat Completions 生成图像](./ImageGenChat.zh.md) — 使用 OpenAI SDK + `extra_body` 参数
+- [异步视频生成](./VideoGen.zh.md) — 使用 `/v1/videos` 端点进行文生视频和图生视频
 
 **祝你使用愉快！**

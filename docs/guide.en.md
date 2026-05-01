@@ -137,5 +137,6 @@ Run the `tokiame` client. Upon successful connection, you will see:
 
 - [Image Generation Guide](./ImageGen.md) — Using the dedicated `/v1/images/generations` endpoint
 - [Image Gen via Chat Completions](./ImageGenChat.md) — Using the OpenAI SDK with `extra_body` parameters
+- [Async Video Generation](./VideoGen.md) — Using `/v1/videos` for text-to-video and image-to-video
 
 **Enjoy!**
