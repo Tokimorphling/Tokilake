@@ -18,6 +18,8 @@ Tokilake 是基于 One-API 生态构建的去中心化大模型 API 调度网关
 - **[📖 User Guide (English)](./docs/guide.en.md)**
 - **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
 - **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
+- **[🎬 异步视频生成](./docs/VideoGen.zh.md)**
+- **[🎬 Async Video Generation](./docs/VideoGen.md)**
 
 ## 🚀 一键部署 (推荐)
 
