@@ -22,6 +22,7 @@ var videoRequestKnownFields = map[string]struct{}{
 	"prompt":         {},
 	"image_url":      {},
 	"image_b64_json": {},
+	"reference_url":  {},
 	"size":           {},
 	"duration":       {},
 	"fps":            {},
@@ -30,17 +31,19 @@ var videoRequestKnownFields = map[string]struct{}{
 }
 
 type VideoRequest struct {
-	Model        string         `json:"model,omitempty"`
-	Mode         string         `json:"mode,omitempty"`
-	Prompt       string         `json:"prompt,omitempty"`
-	ImageURL     string         `json:"image_url,omitempty"`
-	ImageB64JSON string         `json:"image_b64_json,omitempty"`
-	Size         string         `json:"size,omitempty"`
-	Duration     *int           `json:"duration,omitempty"`
-	FPS          *int           `json:"fps,omitempty"`
-	Seed         *int           `json:"seed,omitempty"`
-	N            *int           `json:"n,omitempty"`
-	ExtraFields  map[string]any `json:"-"`
+	Model             string         `json:"model,omitempty" form:"model"`
+	Mode              string         `json:"mode,omitempty" form:"mode"`
+	Prompt            string         `json:"prompt,omitempty" form:"prompt"`
+	ImageURL          string         `json:"image_url,omitempty" form:"image_url"`
+	ImageB64JSON      string         `json:"image_b64_json,omitempty" form:"image_b64_json"`
+	ReferenceURL      string         `json:"reference_url,omitempty" form:"reference_url"`
+	Size              string         `json:"size,omitempty" form:"size"`
+	Duration          *int           `json:"duration,omitempty" form:"duration"`
+	FPS               *int           `json:"fps,omitempty" form:"fps"`
+	Seed              *int           `json:"seed,omitempty" form:"seed"`
+	N                 *int           `json:"n,omitempty" form:"n"`
+	ExtraFields       map[string]any `json:"-" form:"-"`
+	HasInputReference bool           `json:"-" form:"-"`
 }
 
 func (r *VideoRequest) UnmarshalJSON(data []byte) error {
@@ -50,6 +53,7 @@ func (r *VideoRequest) UnmarshalJSON(data []byte) error {
 		Prompt       string `json:"prompt"`
 		ImageURL     string `json:"image_url"`
 		ImageB64JSON string `json:"image_b64_json"`
+		ReferenceURL string `json:"reference_url"`
 		Size         string `json:"size"`
 		Duration     *int   `json:"duration"`
 		FPS          *int   `json:"fps"`
@@ -84,6 +88,7 @@ func (r *VideoRequest) UnmarshalJSON(data []byte) error {
 	r.Prompt = strings.TrimSpace(parsed.Prompt)
 	r.ImageURL = strings.TrimSpace(parsed.ImageURL)
 	r.ImageB64JSON = strings.TrimSpace(parsed.ImageB64JSON)
+	r.ReferenceURL = strings.TrimSpace(parsed.ReferenceURL)
 	r.Size = strings.TrimSpace(parsed.Size)
 	r.Duration = parsed.Duration
 	r.FPS = parsed.FPS
@@ -116,6 +121,9 @@ func (r VideoRequest) MarshalJSON() ([]byte, error) {
 	}
 	if r.ImageB64JSON != "" {
 		payload["image_b64_json"] = r.ImageB64JSON
+	}
+	if r.ReferenceURL != "" {
+		payload["reference_url"] = r.ReferenceURL
 	}
 	if r.Size != "" {
 		payload["size"] = r.Size

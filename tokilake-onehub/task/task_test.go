@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/logger"
@@ -21,7 +23,6 @@ import (
 	"one-api/tokilake-onehub/gateway"
 	hubprovider "one-api/tokilake-onehub/provider"
 	"one-api/types"
-	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -45,12 +46,12 @@ func TestTokiameVideoTaskInitValidation(t *testing.T) {
 		{
 			name: "image2video requires exactly one image input",
 			body: `{"model":"video-model","mode":"image2video","image_url":"http://a","image_b64_json":"abc"}`,
-			msg:  "image2video requires exactly one of image_url or image_b64_json",
+			msg:  "image2video requires exactly one of image_url, image_b64_json, reference_url, or input_reference",
 		},
 		{
 			name: "image2video requires one image input",
 			body: `{"model":"video-model","mode":"image2video"}`,
-			msg:  "image2video requires exactly one of image_url or image_b64_json",
+			msg:  "image2video requires exactly one of image_url, image_b64_json, reference_url, or input_reference",
 		},
 		{
 			name: "n must equal one",
@@ -77,6 +78,40 @@ func TestTokiameVideoTaskInitValidation(t *testing.T) {
 			require.Equal(t, testCase.msg, err.Message)
 		})
 	}
+}
+
+func TestTokiameVideoTaskInitAcceptsMultipartInputReference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "video-model"))
+	require.NoError(t, writer.WriteField("mode", "image2video"))
+	require.NoError(t, writer.WriteField("prompt", "animate this frame"))
+	require.NoError(t, writer.WriteField("size", "1280x720"))
+	part, err := writer.CreateFormFile("input_reference", "input.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("png"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(body.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	task := &TokiameVideoTask{
+		TaskBase: base.TaskBase{
+			C:        c,
+			Platform: model.TaskPlatformTokiameVideo,
+		},
+	}
+	errWithCode := task.Init()
+	require.Nil(t, errWithCode)
+	require.Equal(t, "video-model", task.Request.Model)
+	require.Equal(t, types.VideoModeImageToVideo, task.Request.Mode)
+	require.True(t, task.Request.HasInputReference)
+	require.Equal(t, "input_reference", propertiesFromRequest(task.Request).ImageSource)
 }
 
 func TestPropertiesFromRequestOmitsRawBase64(t *testing.T) {

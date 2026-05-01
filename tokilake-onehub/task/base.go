@@ -140,6 +140,12 @@ func propertiesFromRequest(request *types.VideoRequest) *types.VideoTaskProperti
 		properties.ImageSource = "image_b64_json"
 		properties.HasImageB64 = true
 	}
+	if request.ReferenceURL != "" {
+		properties.ImageSource = "reference_url"
+	}
+	if request.HasInputReference {
+		properties.ImageSource = "input_reference"
+	}
 	return properties
 }
 

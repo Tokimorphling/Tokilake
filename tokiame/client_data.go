@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 
 	"encoding/json"
@@ -91,7 +93,7 @@ func (c *Client) handleDataStream(ctx context.Context, stream tokilake.TunnelStr
 	}
 
 	requestHeaders := mergeRequestHeaders(request.Headers, target.Headers)
-	requestBody, requestHeaders, err := prepareRequestForTarget(request.Body, requestHeaders, target)
+	requestBody, requestHeaders, err := prepareRequestForTarget(request, requestHeaders, target)
 	if err != nil {
 		c.warn("<<< prepare request for target failed request_id=%s err=%v", request.RequestID, err)
 		_ = codec.WriteResponse(&tokilake.TunnelResponse{
@@ -120,10 +122,23 @@ func (c *Client) handleDataStream(ctx context.Context, stream tokilake.TunnelStr
 		return
 	}
 	defer cleanup()
-	defer response.Body.Close()
 
 	c.debug(">>> received local response request_id=%s status=%d headers_count=%d",
 		request.RequestID, response.StatusCode, len(response.Header))
+
+	response, err = adaptResponseForTarget(request, response, target)
+	if err != nil {
+		c.warn("<<< adapt local response failed request_id=%s err=%v", request.RequestID, err)
+		_ = codec.WriteResponse(&tokilake.TunnelResponse{
+			RequestID: request.RequestID,
+			Error: &tokilake.ErrorMessage{
+				Code:    "adapt_response_failed",
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+	defer response.Body.Close()
 
 	if err = c.writeHTTPResponse(codec, request.RequestID, response); err != nil {
 		c.warn("<<< write tunnel response failed request_id=%s err=%v", request.RequestID, err)
@@ -157,6 +172,75 @@ func (c *Client) doLocalRoundTrip(ctx context.Context, requestID string, method 
 	}
 	c.debug("<<< local HTTP response received request_id=%s status=%d", requestID, response.StatusCode)
 	return response, cleanup, nil
+}
+
+func adaptResponseForTarget(request *tokilake.TunnelRequest, response *http.Response, target *ResolvedTarget) (*http.Response, error) {
+	if response == nil || target == nil {
+		return response, nil
+	}
+	adapter := responseAdapterForBackend(target.BackendType)
+	return adapter.AdaptResponse(request, response, target)
+}
+
+type responseAdapter interface {
+	AdaptResponse(request *tokilake.TunnelRequest, response *http.Response, target *ResolvedTarget) (*http.Response, error)
+}
+
+type passthroughResponseAdapter struct{}
+
+func (passthroughResponseAdapter) AdaptResponse(_ *tokilake.TunnelRequest, response *http.Response, _ *ResolvedTarget) (*http.Response, error) {
+	return response, nil
+}
+
+type videoTaskResponseAdapter struct{}
+
+func (videoTaskResponseAdapter) AdaptResponse(request *tokilake.TunnelRequest, response *http.Response, target *ResolvedTarget) (*http.Response, error) {
+	if !isVideoTaskJSONResponseRequest(request) || response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return response, nil
+	}
+	contentType := strings.ToLower(response.Header.Get("Content-Type"))
+	if contentType != "" && !strings.Contains(contentType, "application/json") {
+		return response, nil
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if closeErr := response.Body.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read video response body: %w", err)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		response.ContentLength = int64(len(body))
+		return response, nil
+	}
+
+	payload, err := decodeJSONPayload(body)
+	if err != nil {
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		response.ContentLength = int64(len(body))
+		return response, nil
+	}
+	normalizeVideoTaskPayload(payload, target)
+	rewrittenBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal video response body: %w", err)
+	}
+	response.Body = io.NopCloser(bytes.NewReader(rewrittenBody))
+	response.ContentLength = int64(len(rewrittenBody))
+	response.Header.Set("Content-Type", "application/json")
+	response.Header.Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
+	return response, nil
+}
+
+func responseAdapterForBackend(backendType string) responseAdapter {
+	switch normalizeClientBackendType(backendType) {
+	case "openai", "sglang", "vllm_omni":
+		return videoTaskResponseAdapter{}
+	default:
+		return passthroughResponseAdapter{}
+	}
 }
 
 func (c *Client) writeHTTPResponse(codec *tokilake.TunnelStreamCodec, requestID string, response *http.Response) error {
@@ -348,10 +432,57 @@ func mergeRequestHeaders(tunnelHeaders map[string]string, targetHeaders map[stri
 	return merged
 }
 
-func prepareRequestForTarget(body []byte, headers map[string]string, target *ResolvedTarget) ([]byte, map[string]string, error) {
+func prepareRequestForTarget(request *tokilake.TunnelRequest, headers map[string]string, target *ResolvedTarget) ([]byte, map[string]string, error) {
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	if request == nil {
+		return nil, headers, nil
+	}
+	body := request.Body
 	if target == nil {
 		return body, headers, nil
 	}
+
+	if isVideoCreateRequest(request) {
+		switch normalizeClientBackendType(target.BackendType) {
+		case "vllm_omni":
+			return prepareVLLMOmniVideoCreateRequest(body, headers, target)
+		case "sglang":
+			return prepareSGLangVideoCreateRequest(body, headers, target)
+		}
+	}
+
+	return rewriteRequestModelForTarget(body, headers, target)
+}
+
+func isVideoCreateRequest(request *tokilake.TunnelRequest) bool {
+	if request == nil {
+		return false
+	}
+	return request.RouteKind == tokilake.TunnelRouteKindVideosCreate ||
+		(request.Method == http.MethodPost && strings.TrimSpace(request.Path) == "/v1/videos")
+}
+
+func isVideoTaskJSONResponseRequest(request *tokilake.TunnelRequest) bool {
+	if request == nil {
+		return false
+	}
+	if request.RouteKind == tokilake.TunnelRouteKindVideosCreate || request.RouteKind == tokilake.TunnelRouteKindVideosGet {
+		return true
+	}
+	method := strings.ToUpper(strings.TrimSpace(request.Method))
+	path := strings.Trim(strings.TrimSpace(request.Path), "/")
+	if method == http.MethodPost && path == "v1/videos" {
+		return true
+	}
+	if method == http.MethodGet && strings.HasPrefix(path, "v1/videos/") && !strings.HasSuffix(path, "/content") {
+		return true
+	}
+	return false
+}
+
+func rewriteRequestModelForTarget(body []byte, headers map[string]string, target *ResolvedTarget) ([]byte, map[string]string, error) {
 	upstreamModel := strings.TrimSpace(target.UpstreamModel)
 	if upstreamModel == "" || upstreamModel == strings.TrimSpace(target.ModelName) {
 		return body, headers, nil
@@ -383,13 +514,75 @@ func prepareRequestForTarget(body []byte, headers map[string]string, target *Res
 	}
 }
 
+func prepareSGLangVideoCreateRequest(body []byte, headers map[string]string, target *ResolvedTarget) ([]byte, map[string]string, error) {
+	contentType := headerValue(headers, "Content-Type")
+	if !strings.HasPrefix(strings.ToLower(contentType), "application/json") {
+		return rewriteRequestModelForTarget(body, headers, target)
+	}
+
+	payload, err := decodeJSONPayload(body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("prepare sglang video request: %w", err)
+	}
+	applyPayloadModel(payload, target)
+	if referenceURL, ok := payload["reference_url"]; !ok || isEmptyFieldValue(referenceURL) {
+		if imageURL, ok := payload["image_url"]; ok && !isEmptyFieldValue(imageURL) {
+			payload["reference_url"] = imageURL
+		}
+	}
+	rewrittenBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal sglang video request: %w", err)
+	}
+	return rewrittenBody, headers, nil
+}
+
+func prepareVLLMOmniVideoCreateRequest(body []byte, headers map[string]string, target *ResolvedTarget) ([]byte, map[string]string, error) {
+	contentType := strings.ToLower(headerValue(headers, "Content-Type"))
+	switch {
+	case strings.HasPrefix(contentType, "multipart/form-data"):
+		rewrittenBody, rewrittenContentType, err := rewriteMultipartModelField(body, headerValue(headers, "Content-Type"), videoUpstreamModel(target))
+		if err != nil {
+			return nil, nil, err
+		}
+		setHeaderValue(headers, "Content-Type", rewrittenContentType)
+		return rewrittenBody, headers, nil
+	case strings.HasPrefix(contentType, "application/x-www-form-urlencoded"):
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, nil, fmt.Errorf("prepare vllm omni video form request: %w", err)
+		}
+		values.Set("model", videoUpstreamModel(target))
+		rewrittenBody, rewrittenContentType, err := multipartFromValues(values)
+		if err != nil {
+			return nil, nil, err
+		}
+		setHeaderValue(headers, "Content-Type", rewrittenContentType)
+		return rewrittenBody, headers, nil
+	case strings.HasPrefix(contentType, "application/json"), looksLikeJSON(body):
+		payload, err := decodeJSONPayload(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("prepare vllm omni video json request: %w", err)
+		}
+		applyPayloadModel(payload, target)
+		rewrittenBody, rewrittenContentType, err := multipartFromPayload(payload)
+		if err != nil {
+			return nil, nil, err
+		}
+		setHeaderValue(headers, "Content-Type", rewrittenContentType)
+		return rewrittenBody, headers, nil
+	default:
+		return rewriteRequestModelForTarget(body, headers, target)
+	}
+}
+
 func rewriteJSONModelField(body []byte, upstreamModel string) ([]byte, error) {
 	if len(body) == 0 {
 		payload := map[string]any{"model": upstreamModel}
 		return json.Marshal(payload)
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	payload, err := decodeJSONPayload(body)
+	if err != nil {
 		return nil, fmt.Errorf("rewrite json model: %w", err)
 	}
 	payload["model"] = upstreamModel
@@ -464,6 +657,278 @@ func rewriteMultipartModelField(body []byte, contentType string, upstreamModel s
 		return nil, "", fmt.Errorf("close multipart writer: %w", err)
 	}
 	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func decodeJSONPayload(body []byte) (map[string]any, error) {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return map[string]any{}, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	payload := make(map[string]any)
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	return payload, nil
+}
+
+func applyPayloadModel(payload map[string]any, target *ResolvedTarget) {
+	model := videoUpstreamModel(target)
+	if model != "" {
+		payload["model"] = model
+	}
+}
+
+func videoUpstreamModel(target *ResolvedTarget) string {
+	if target == nil {
+		return ""
+	}
+	return firstNonEmptyString(target.UpstreamModel, target.ModelName)
+}
+
+func looksLikeJSON(body []byte) bool {
+	return bytes.HasPrefix(bytes.TrimSpace(body), []byte("{"))
+}
+
+func multipartFromValues(values url.Values) ([]byte, string, error) {
+	payload := make(map[string]any, len(values))
+	for key, list := range values {
+		if len(list) == 1 {
+			payload[key] = list[0]
+			continue
+		}
+		for index, value := range list {
+			payload[fmt.Sprintf("%s[%d]", key, index)] = value
+		}
+	}
+	return multipartFromPayload(payload)
+}
+
+func multipartFromPayload(payload map[string]any) ([]byte, string, error) {
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value, ok, err := multipartFieldString(payload[key])
+		if err != nil {
+			return nil, "", err
+		}
+		if !ok {
+			continue
+		}
+		if err = writer.WriteField(key, value); err != nil {
+			return nil, "", fmt.Errorf("write multipart field %s: %w", key, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("close multipart writer: %w", err)
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func multipartFieldString(value any) (string, bool, error) {
+	switch typed := value.(type) {
+	case nil:
+		return "", false, nil
+	case string:
+		return typed, true, nil
+	case json.Number:
+		return typed.String(), true, nil
+	case bool:
+		return strconv.FormatBool(typed), true, nil
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true, nil
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'f', -1, 32), true, nil
+	case int:
+		return strconv.Itoa(typed), true, nil
+	case int64:
+		return strconv.FormatInt(typed, 10), true, nil
+	case uint64:
+		return strconv.FormatUint(typed, 10), true, nil
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return "", false, fmt.Errorf("marshal multipart field value: %w", err)
+		}
+		return string(data), true, nil
+	}
+}
+
+func isEmptyFieldValue(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	default:
+		return false
+	}
+}
+
+func normalizeVideoTaskPayload(payload map[string]any, target *ResolvedTarget) {
+	if payload == nil {
+		return
+	}
+	if _, exists := payload["id"]; !exists {
+		if taskID, ok := firstPayloadString(payload, "task_id", "video_id"); ok {
+			payload["id"] = taskID
+		} else if dataMap, ok := payloadMap(payload["data"]); ok {
+			if taskID, ok := firstPayloadString(dataMap, "id", "task_id", "video_id"); ok {
+				payload["id"] = taskID
+			}
+		}
+	}
+	if _, exists := payload["object"]; !exists {
+		payload["object"] = "video"
+	}
+	if _, exists := payload["created"]; !exists {
+		if created, ok := firstPayloadNumber(payload, "created_at", "createdAt", "submit_time"); ok {
+			payload["created"] = created
+		}
+	}
+	if model, ok := firstPayloadString(payload, "model", "model_name"); ok && strings.TrimSpace(model) != "" {
+		payload["model"] = model
+	} else if model := strings.TrimSpace(videoUpstreamModel(target)); model != "" {
+		payload["model"] = model
+	}
+	if status, ok := firstPayloadString(payload, "status", "task_status", "state"); ok {
+		payload["status"] = normalizeVideoResponseStatus(status)
+	}
+	if prompt, ok := firstPayloadString(payload, "prompt"); ok {
+		payload["prompt"] = prompt
+	}
+	if size, ok := firstPayloadString(payload, "size"); ok {
+		payload["size"] = size
+	}
+	if url, ok := videoPayloadURL(payload); ok {
+		if _, exists := payload["download_url"]; !exists {
+			payload["download_url"] = url
+		}
+		if _, exists := payload["content_url"]; !exists {
+			payload["content_url"] = url
+		}
+	}
+	if normalizeVideoResponseStatus(fmt.Sprint(payload["status"])) == "failed" {
+		normalizeVideoTaskError(payload)
+	}
+}
+
+func normalizeVideoResponseStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "submitted":
+		return "submitted"
+	case "queued", "pending", "queueing":
+		return "queued"
+	case "processing", "running", "in_progress":
+		return "processing"
+	case "completed", "success", "succeeded":
+		return "completed"
+	case "failed", "failure", "error", "cancelled", "canceled":
+		return "failed"
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+func normalizeVideoTaskError(payload map[string]any) {
+	if _, exists := payload["error"]; exists {
+		return
+	}
+	if message, ok := firstPayloadString(payload, "error_message", "fail_reason", "failure_reason", "message"); ok && strings.TrimSpace(message) != "" {
+		payload["error"] = map[string]any{
+			"message": message,
+			"type":    "upstream_error",
+			"code":    "video_failed",
+		}
+	}
+}
+
+func videoPayloadURL(payload map[string]any) (string, bool) {
+	if url, ok := firstPayloadString(payload, "content_url", "download_url", "url", "video_url"); ok && strings.TrimSpace(url) != "" {
+		return url, true
+	}
+	dataList, ok := payloadList(payload["data"])
+	if !ok {
+		return "", false
+	}
+	for _, item := range dataList {
+		itemMap, ok := payloadMap(item)
+		if !ok {
+			continue
+		}
+		if url, ok := firstPayloadString(itemMap, "url", "video_url", "content_url", "download_url"); ok && strings.TrimSpace(url) != "" {
+			return url, true
+		}
+	}
+	return "", false
+}
+
+func firstPayloadString(payload map[string]any, keys ...string) (string, bool) {
+	for _, key := range keys {
+		value, exists := payload[key]
+		if !exists {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			return typed, true
+		case json.Number:
+			return typed.String(), true
+		case float64:
+			return strconv.FormatFloat(typed, 'f', -1, 64), true
+		case bool:
+			return strconv.FormatBool(typed), true
+		}
+	}
+	return "", false
+}
+
+func firstPayloadNumber(payload map[string]any, keys ...string) (int64, bool) {
+	for _, key := range keys {
+		value, exists := payload[key]
+		if !exists {
+			continue
+		}
+		switch typed := value.(type) {
+		case json.Number:
+			if number, err := typed.Int64(); err == nil {
+				return number, true
+			}
+		case float64:
+			return int64(typed), true
+		case int64:
+			return typed, true
+		case int:
+			return int64(typed), true
+		case string:
+			number, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+			if err == nil {
+				return number, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func payloadMap(value any) (map[string]any, bool) {
+	typed, ok := value.(map[string]any)
+	return typed, ok
+}
+
+func payloadList(value any) ([]any, bool) {
+	typed, ok := value.([]any)
+	return typed, ok
 }
 
 func flattenHTTPHeaders(headers http.Header) map[string]string {

@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
+	"one-api/common/config"
 	"one-api/common/logger"
 	"one-api/model"
 	"one-api/tokilake-onehub/gateway"
 	"one-api/types"
-	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/xtaci/smux"
 )
@@ -133,6 +137,69 @@ func TestProviderVideoMethodsUseTunnelEndpoints(t *testing.T) {
 	require.Equal(t, http.MethodGet, thirdReq.Method)
 	require.Equal(t, "/v1/videos/vid-submit/content", thirdReq.Path)
 	require.Equal(t, "video-model", thirdReq.Model)
+}
+
+func TestProviderCreateVideoPreservesMultipartBody(t *testing.T) {
+	logger.SetupLogger()
+	gin.SetMode(gin.TestMode)
+
+	channelID := 88002
+	manager := tokilakesvc.NewSessionManager()
+	previousGateway := gateway.Global
+	gateway.Global = tokilakesvc.NewGateway(nil, nil, nil, nil, manager)
+	t.Cleanup(func() {
+		gateway.Global = previousGateway
+	})
+
+	requests := make(chan *tokilakesvc.TunnelRequest, 1)
+	setupVideoTunnelSession(t, manager, channelID, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+		requests <- request
+		return &tokilakesvc.TunnelResponse{
+				RequestID:  request.RequestID,
+				StatusCode: http.StatusOK,
+				Headers: map[string]string{
+					"Content-Type": "application/json",
+				},
+			}, mustJSON(t, &types.VideoTaskObject{
+				ID:     "vid-multipart",
+				Status: types.VideoStatusQueued,
+			})
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "video-model"))
+	require.NoError(t, writer.WriteField("mode", types.VideoModeImageToVideo))
+	require.NoError(t, writer.WriteField("prompt", "animate"))
+	part, err := writer.CreateFormFile("input_reference", "input.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("png"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	rawBody := bytes.Clone(body.Bytes())
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+	c.Set(config.GinRequestBodyKey, rawBody)
+
+	channel := &model.Channel{Id: channelID}
+	provider := ProviderFactory{}.Create(channel).(*Provider)
+	provider.SetContext(c)
+
+	submitted, errWithCode := provider.CreateVideo(&types.VideoRequest{
+		Model:             "video-model",
+		Mode:              types.VideoModeImageToVideo,
+		Prompt:            "animate",
+		HasInputReference: true,
+	})
+	require.Nil(t, errWithCode)
+	require.Equal(t, "vid-multipart", submitted.ID)
+
+	firstReq := <-requests
+	require.Equal(t, rawBody, firstReq.Body)
+	require.Contains(t, firstReq.Headers["Content-Type"], "multipart/form-data")
 }
 
 func mustJSON(t *testing.T, payload any) []byte {

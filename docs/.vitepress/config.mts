@@ -53,7 +53,8 @@ export default defineConfig({
       {
         text: '开发',
         items: [
-          { text: '开发说明', link: '/dev/index' }
+          { text: '开发说明', link: '/dev/index' },
+          { text: '集成 tokilake-core', link: '/tokilake-core-integration' }
         ]
       },
       {

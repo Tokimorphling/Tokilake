@@ -33,12 +33,14 @@ func (t *TokiameVideoTask) HandleError(err *base.TaskError) {
 }
 
 func (t *TokiameVideoTask) Init() *base.TaskError {
-	if err := common.UnmarshalBodyReusable(t.C, &t.Request); err != nil {
+	t.Request = &types.VideoRequest{}
+	if err := common.UnmarshalBodyReusable(t.C, t.Request); err != nil {
 		return base.StringTaskError(http.StatusBadRequest, "invalid_request", err.Error(), true)
 	}
 	if t.Request == nil {
 		return base.StringTaskError(http.StatusBadRequest, "invalid_request", "request is required", true)
 	}
+	t.Request.HasInputReference = hasVideoInputReference(t.C)
 
 	t.Request.Model = strings.TrimSpace(t.Request.Model)
 	t.Request.Mode = normalizeVideoMode(t.Request.Mode)
@@ -48,6 +50,7 @@ func (t *TokiameVideoTask) Init() *base.TaskError {
 	t.Request.Prompt = strings.TrimSpace(t.Request.Prompt)
 	t.Request.ImageURL = strings.TrimSpace(t.Request.ImageURL)
 	t.Request.ImageB64JSON = strings.TrimSpace(t.Request.ImageB64JSON)
+	t.Request.ReferenceURL = strings.TrimSpace(t.Request.ReferenceURL)
 	t.Request.Size = strings.TrimSpace(t.Request.Size)
 	if t.Request.Model == "" {
 		return base.StringTaskError(http.StatusBadRequest, "invalid_request", "model is required", true)
@@ -66,19 +69,35 @@ func (t *TokiameVideoTask) Init() *base.TaskError {
 		if t.Request.Prompt == "" {
 			return base.StringTaskError(http.StatusBadRequest, "invalid_request", "prompt is required for text2video", true)
 		}
-		if t.Request.ImageURL != "" || t.Request.ImageB64JSON != "" {
+		if t.Request.ImageURL != "" || t.Request.ImageB64JSON != "" || t.Request.ReferenceURL != "" || t.Request.HasInputReference {
 			return base.StringTaskError(http.StatusBadRequest, "invalid_request", "text2video does not support image inputs", true)
 		}
 	case types.VideoModeImageToVideo:
-		hasImageURL := t.Request.ImageURL != ""
-		hasImageB64 := t.Request.ImageB64JSON != ""
-		if hasImageURL == hasImageB64 {
-			return base.StringTaskError(http.StatusBadRequest, "invalid_request", "image2video requires exactly one of image_url or image_b64_json", true)
+		imageInputs := 0
+		for _, hasInput := range []bool{
+			t.Request.ImageURL != "",
+			t.Request.ImageB64JSON != "",
+			t.Request.ReferenceURL != "",
+			t.Request.HasInputReference,
+		} {
+			if hasInput {
+				imageInputs++
+			}
+		}
+		if imageInputs != 1 {
+			return base.StringTaskError(http.StatusBadRequest, "invalid_request", "image2video requires exactly one of image_url, image_b64_json, reference_url, or input_reference", true)
 		}
 	}
 
 	t.OriginalModel = t.Request.Model
 	return nil
+}
+
+func hasVideoInputReference(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.MultipartForm == nil {
+		return false
+	}
+	return len(c.Request.MultipartForm.File["input_reference"]) > 0
 }
 
 func (t *TokiameVideoTask) SetProvider() *base.TaskError {

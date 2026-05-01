@@ -129,7 +129,7 @@ graph TB
 
 - **`Tokilake` (Gateway/Hub Level)**: The unified ingress for traffic. It receives standard HTTP API requests from end-users and multiplexes them to the corresponding edge nodes.
 - **`Tokiame` (Node/Worker Level)**: The lightweight client on the edge. It maintains an ultra-low latency reverse tunnel via either WebSocket (with `xtaci/smux` multiplexing) or QUIC.
-- **`tokilake-core`**: The standalone protocol, tunnel, session, and gateway core. It has no onehub database dependency.
+- **`tokilake-core`**: The standalone protocol, tunnel, session, and gateway core. It has no onehub database dependency. **[📖 Integrate tokilake-core into your own gateway →](./docs/tokilake-core-integration.md)**
 - **`tokilake-onehub`**: The onehub adapter that maps connected workers into channels, providers, and video tasks.
 
 ### Transport Options
@@ -153,6 +153,81 @@ QUIC is ideal for scenarios requiring lower latency and better connection resili
 2. Upon successful gateway verification, it automatically creates/binds a virtual `Channel` (`type=100`) in the database and assigns it to a specific Private Group.
 3. When a user sends an LLM HTTP request through the gateway, the gateway treats it like any normal channel, transparently streaming it to the edge node for processing via the tunnel.
 4. Relies on real-time heartbeat keepalives. If an edge node loses its connection, the gateway automatically disables its virtual Channel, achieving zero-downtime Failover.
+
+## 🆚 How Tokilake Compares
+
+Tokilake occupies a unique position in the open-source LLM infrastructure landscape — it is the only project that combines **API aggregation gateway**, **distributed remote worker registration**, and **tunnel-based NAT traversal** in a single system.
+
+### Architecture Comparison
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        one-api / new-api / LiteLLM                  │
+│                                                                     │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐                     │
+│   │ OpenAI   │    │ Claude   │    │ Gemini   │   Static backends   │
+│   │ (public) │    │ (public) │    │ (public) │   Manual config     │
+│   └────┬─────┘    └────┬─────┘    └────┬─────┘                     │
+│        └───────────────┼───────────────┘                            │
+│                        ▼                                            │
+│               ┌─────────────────┐                                   │
+│               │  API Gateway    │   No worker registration          │
+│               │  (aggregation)  │   No NAT traversal                │
+│               └─────────────────┘                                   │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                              exo                                    │
+│                                                                     │
+│   ┌─────────┐  TB5  ┌─────────┐  TB5  ┌─────────┐                 │
+│   │ Mac A   │◄─────►│ Mac B   │◄─────►│ Mac C   │  One big model  │
+│   │ shard 1 │       │ shard 2 │       │ shard 3 │  split across   │
+│   └─────────┘       └─────────┘       └─────────┘  devices         │
+│                                                                     │
+│   Requires high-bandwidth interconnect (Thunderbolt / InfiniBand)   │
+│   P2P auto-discovery, LAN only                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                           Tokilake                                  │
+│                                                                     │
+│              ┌─────────────────────┐                                │
+│              │   Tokilake Gateway  │   Central hub                   │
+│              │  (API aggregation)  │   OpenAI-compatible API         │
+│              └────────┬────────────┘                                │
+│                       │                                             │
+│          ┌────────────┼────────────┐                                │
+│          │ WS/QUIC    │ WS/QUIC    │ WS/QUIC     NAT traversal     │
+│          │ tunnel     │ tunnel     │ tunnel      (outbound only)    │
+│          ▼            ▼            ▼                                 │
+│   ┌──────────┐ ┌──────────┐ ┌──────────┐                           │
+│   │Tokiame A │ │Tokiame B │ │Tokiame C │   Independent workers     │
+│   │ Ollama   │ │ vLLM     │ │ SGLang   │   Each runs own models    │
+│   │ (home)   │ │ (cloud)  │ │ (edge)   │   Heterogeneous hardware  │
+│   └──────────┘ └──────────┘ └──────────┘                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Feature Matrix
+
+| Capability | one-api / new-api | LiteLLM | exo | **Tokilake** |
+|---|:---:|:---:|:---:|:---:|
+| Multi-provider API aggregation | ✅ | ✅ | ❌ | ✅ |
+| Static backend configuration | ✅ | ✅ | ❌ | ✅ |
+| Remote worker auto-registration | ❌ | ❌ | ✅ | ✅ |
+| Tunnel-based NAT traversal | ❌ | ❌ | ❌ | ✅ |
+| Model sharding across devices | ❌ | ❌ | ✅ | ❌ |
+| Heterogeneous hardware support | N/A | N/A | Limited | ✅ |
+| Works over public internet | ✅ | ✅ | ❌ | ✅ |
+| Zero inbound ports on workers | N/A | N/A | ❌ | ✅ |
+| Heartbeat & auto-failover | ❌ | ❌ | ✅ | ✅ |
+
+### When to Choose Tokilake
+
+- **You have GPUs scattered across different locations** (home, cloud, edge) and want to unify them behind one API
+- **Your workers are behind NAT/firewalls** and you can't or don't want to set up FRP/Ngrok
+- **You want different workers running different models** rather than sharding one model across devices
+- **You need the full one-api ecosystem** (billing, auth, groups, admin UI) plus distributed compute
 
 ## Acknowledgements
 

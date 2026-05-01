@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
+	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/requester"
 	"one-api/providers/openai"
 	"one-api/types"
-	tokilakesvc "github.com/Tokimorphling/Tokilake/tokilake-core"
 )
 
 func (p *Provider) CreateVideo(request *types.VideoRequest) (*types.VideoTaskObject, *types.OpenAIErrorWithStatusCode) {
@@ -18,13 +18,7 @@ func (p *Provider) CreateVideo(request *types.VideoRequest) (*types.VideoTaskObj
 		return nil, common.StringErrorWrapperLocal("request is required", "invalid_request", http.StatusBadRequest)
 	}
 
-	resp, errWithCode := p.doJSONRequest(
-		config.RelayModeVideos,
-		tokilakesvc.TunnelRouteKindVideosCreate,
-		request.Model,
-		request,
-		false,
-	)
+	resp, errWithCode := p.doVideoCreateRequest(request)
 	if errWithCode != nil {
 		return nil, errWithCode
 	}
@@ -35,6 +29,47 @@ func (p *Provider) CreateVideo(request *types.VideoRequest) (*types.VideoTaskObj
 		return nil, errWithCode
 	}
 	return response, nil
+}
+
+func (p *Provider) doVideoCreateRequest(request *types.VideoRequest) (*http.Response, *types.OpenAIErrorWithStatusCode) {
+	path, errWithCode := p.GetSupportedAPIUri(config.RelayModeVideos)
+	if errWithCode != nil {
+		return nil, errWithCode
+	}
+
+	if rawBody, contentType, ok := p.rawBodyForPath(path); ok && isSupportedVideoCreateContentType(contentType) {
+		return p.doTunnelHTTPRequest(
+			http.MethodPost,
+			path,
+			tokilakesvc.TunnelRouteKindVideosCreate,
+			request.Model,
+			rawBody,
+			contentType,
+			false,
+		)
+	}
+
+	body, err := common.Marshal(request)
+	if err != nil {
+		return nil, common.ErrorWrapper(err, "marshal_request_failed", http.StatusInternalServerError)
+	}
+
+	return p.doTunnelHTTPRequest(
+		http.MethodPost,
+		path,
+		tokilakesvc.TunnelRouteKindVideosCreate,
+		request.Model,
+		body,
+		"application/json",
+		false,
+	)
+}
+
+func isSupportedVideoCreateContentType(contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	return strings.HasPrefix(contentType, "application/json") ||
+		strings.HasPrefix(contentType, "application/x-www-form-urlencoded") ||
+		strings.HasPrefix(contentType, "multipart/form-data")
 }
 
 func (p *Provider) GetVideo(taskID string) (*types.VideoTaskObject, *types.OpenAIErrorWithStatusCode) {

@@ -843,6 +843,8 @@ func normalizeClientBackendType(backendType string) string {
 			return "openai"
 		}
 		return backendType
+	case "vllm", "vllm-omni", "vllm_omni":
+		return "vllm_omni"
 	default:
 		return backendType
 	}
