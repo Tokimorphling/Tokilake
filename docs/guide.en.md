@@ -132,4 +132,10 @@ Run the `tokiame` client. Upon successful connection, you will see:
 4. They should create an **API Key** in the **Token** page and bind it to the group.
 5. They can test the model directly in the **Actions/Chat** section of the dashboard.
 ![alt text](image-1.png)
+
+## 5. Next Steps: Image Generation
+
+- [Image Generation Guide](./ImageGen.md) — Using the dedicated `/v1/images/generations` endpoint
+- [Image Gen via Chat Completions](./ImageGenChat.md) — Using the OpenAI SDK with `extra_body` parameters
+
 **Enjoy!**

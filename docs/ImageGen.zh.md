@@ -11,6 +11,8 @@
 - [中文使用指南](./guide.zh.md)
 - [User Guide (English)](./guide.en.md)
 
+> **另一种方式：** 如果你更喜欢使用 **OpenAI Python SDK** 通过 `/v1/chat/completions` 而非直接 HTTP 请求 `/v1/images/generations`，请参阅 [通过 Chat Completions 生成图像](./ImageGenChat.zh.md)。
+
 ## 1) 启动图像后端（以 SGLang 为例）
 
 ```bash

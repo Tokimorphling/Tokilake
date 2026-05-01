@@ -11,6 +11,8 @@ If you haven’t set up Tokilake/Tokiame yet, start with:
 - [User Guide (English)](./guide.en.md)
 - [中文使用指南](./guide.zh.md)
 
+> **Alternative approach:** If you prefer using the **OpenAI Python SDK** with `/v1/chat/completions` instead of raw HTTP requests to `/v1/images/generations`, see [Image Gen via Chat Completions](./ImageGenChat.md).
+
 ## 1) Start an image backend (SGLang example)
 
 ```bash

@@ -18,6 +18,8 @@ You can visit the [Tokilake Demo](https://tokilake.abrdns.com/) to explore the c
 - **[📖 User Guide (English)](./docs/guide.en.md)**
 - **[🖼️ Image Generation Guide](./docs/ImageGen.md)**
 - **[🖼️ 图像生成指南](./docs/ImageGen.zh.md)**
+- **[🎨 Image Gen via Chat Completions (OpenAI SDK)](./docs/ImageGenChat.md)**
+- **[🎨 通过 Chat Completions 生成图像（OpenAI SDK）](./docs/ImageGenChat.zh.md)**
 
 ## 🚀 One-Click Deployment (Recommended)
 

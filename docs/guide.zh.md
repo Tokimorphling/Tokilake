@@ -133,4 +133,10 @@ npm install -g @tokilake/tokiame
 5. 可以在控制面的 **Actions/Chat** 中直接测试模型。
 
 ![alt text](image-1.png)
+
+## 5. 进阶：图像生成
+
+- [图像生成指南](./ImageGen.zh.md) — 使用专用 `/v1/images/generations` 端点
+- [通过 Chat Completions 生成图像](./ImageGenChat.zh.md) — 使用 OpenAI SDK + `extra_body` 参数
+
 **祝你使用愉快！**
