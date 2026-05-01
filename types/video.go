@@ -163,7 +163,15 @@ type VideoTaskObject struct {
 	Seed        *int            `json:"seed,omitempty"`
 	ContentURL  string          `json:"content_url,omitempty"`
 	DownloadURL string          `json:"download_url,omitempty"`
+	Storage     *VideoStorage   `json:"storage,omitempty"`
 	Error       *VideoTaskError `json:"error,omitempty"`
+}
+
+type VideoStorage struct {
+	Provider string `json:"provider,omitempty"`
+	Bucket   string `json:"bucket,omitempty"`
+	Key      string `json:"key,omitempty"`
+	URL      string `json:"url,omitempty"`
 }
 
 type VideoListResponse struct {
@@ -172,13 +180,16 @@ type VideoListResponse struct {
 }
 
 type VideoTaskProperties struct {
-	Model       string `json:"model,omitempty"`
-	Mode        string `json:"mode,omitempty"`
-	Prompt      string `json:"prompt,omitempty"`
-	Size        string `json:"size,omitempty"`
-	ImageSource string `json:"image_source,omitempty"`
-	HasImageB64 bool   `json:"has_image_b64,omitempty"`
-	Duration    *int   `json:"duration,omitempty"`
-	FPS         *int   `json:"fps,omitempty"`
-	Seed        *int   `json:"seed,omitempty"`
+	Model           string `json:"model,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	Prompt          string `json:"prompt,omitempty"`
+	Size            string `json:"size,omitempty"`
+	ImageSource     string `json:"image_source,omitempty"`
+	HasImageB64     bool   `json:"has_image_b64,omitempty"`
+	Duration        *int   `json:"duration,omitempty"`
+	FPS             *int   `json:"fps,omitempty"`
+	Seed            *int   `json:"seed,omitempty"`
+	PollErrorCount  int    `json:"poll_error_count,omitempty"`
+	LastPollError   string `json:"last_poll_error,omitempty"`
+	LastPollErrorAt int64  `json:"last_poll_error_at,omitempty"`
 }

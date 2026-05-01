@@ -98,14 +98,29 @@ func GetVideoContent(c *gin.Context) {
 		return
 	}
 
+	if storageURL := videoStorageDownloadURLFromTask(task); storageURL != "" {
+		c.Redirect(http.StatusTemporaryRedirect, storageURL)
+		return
+	}
+
+	directURL := videoExternalDownloadURLFromTask(task)
+
 	channel, err := model.GetChannelById(task.ChannelId)
 	if err != nil {
+		if directURL != "" {
+			c.Redirect(http.StatusTemporaryRedirect, directURL)
+			return
+		}
 		writeStringOpenAIError(c, http.StatusServiceUnavailable, "channel_not_found", "channel not found")
 		return
 	}
 	provider := providers.GetProvider(channel, c)
 	videoProvider, ok := provider.(providersbase.VideoInterface)
 	if !ok {
+		if directURL != "" {
+			c.Redirect(http.StatusTemporaryRedirect, directURL)
+			return
+		}
 		writeStringOpenAIError(c, http.StatusServiceUnavailable, "provider_not_found", "video provider not found")
 		return
 	}
@@ -113,6 +128,10 @@ func GetVideoContent(c *gin.Context) {
 	videoProvider.SetOriginalModel(propertiesFromTask(task).Model)
 	resp, errWithCode := videoProvider.GetVideoContent(task.TaskID)
 	if errWithCode != nil {
+		if directURL != "" {
+			c.Redirect(http.StatusTemporaryRedirect, directURL)
+			return
+		}
 		writeOpenAIError(c, errWithCode)
 		return
 	}

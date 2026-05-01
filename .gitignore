@@ -36,3 +36,5 @@ __pycache__/
 /deploy/.env.compose
 /deploy/runtime-letsencrypt/
 /deploy/.env.compose.letsencrypt
+
+docs/dev

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"one-api/common"
 	"one-api/common/config"
 	"one-api/common/logger"
+	"one-api/common/objectstore"
 	"one-api/model"
 	"one-api/providers"
 	"one-api/relay/task/base"
@@ -189,6 +191,29 @@ func TestListVideosAndGetVideoByIDUseStoredSnapshot(t *testing.T) {
 	require.Contains(t, detailRecorder.Body.String(), `"status":"queued"`)
 }
 
+func TestVideoTaskFromTaskUsesProxyContentURLAndPreservesDirectDownloadURL(t *testing.T) {
+	task := &model.Task{
+		TaskID:   "vid-direct",
+		Status:   model.TaskStatusSuccess,
+		Progress: 100,
+		Properties: marshalTaskJSON(&types.VideoTaskProperties{
+			Model: "video-model",
+			Mode:  types.VideoModeTextToVideo,
+		}),
+		Data: marshalTaskJSON(&types.VideoTaskObject{
+			ID:          "vid-direct",
+			Status:      types.VideoStatusCompleted,
+			ContentURL:  "https://cdn.example.com/video.mp4",
+			DownloadURL: "https://cdn.example.com/download.mp4",
+		}),
+	}
+
+	video := videoTaskFromTask(task)
+
+	require.Equal(t, "/v1/videos/vid-direct/content", video.ContentURL)
+	require.Equal(t, "https://cdn.example.com/download.mp4", video.DownloadURL)
+}
+
 func TestGetVideoContentReturnsTerminalErrorsAndStreamsSuccess(t *testing.T) {
 	setupTokiameVideoTestDB(t)
 
@@ -273,6 +298,59 @@ func TestGetVideoContentReturnsTerminalErrorsAndStreamsSuccess(t *testing.T) {
 	require.Equal(t, "mp4!", successRecorder.Body.String())
 }
 
+func TestGetVideoContentRedirectsStoredDirectDownloadURL(t *testing.T) {
+	setupTokiameVideoTestDB(t)
+
+	user := createVideoTestUser(t, "video-group")
+	task := createVideoTestTask(t, user.Id, model.TaskStatusSuccess, &types.VideoTaskObject{
+		ID:          "vid-direct-download",
+		Status:      types.VideoStatusCompleted,
+		Model:       "video-model",
+		Mode:        types.VideoModeTextToVideo,
+		DownloadURL: "https://cdn.example.com/video.mp4",
+	})
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/"+task.TaskID+"/content", nil)
+	c.Params = gin.Params{{Key: "id", Value: task.TaskID}}
+	c.Set("id", user.Id)
+
+	GetVideoContent(c)
+
+	require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
+	require.Equal(t, "https://cdn.example.com/video.mp4", recorder.Header().Get("Location"))
+}
+
+func TestGetVideoContentRedirectsStoredObjectStorageURL(t *testing.T) {
+	setupTokiameVideoTestDB(t)
+
+	user := createVideoTestUser(t, "video-group")
+	task := createVideoTestTask(t, user.Id, model.TaskStatusSuccess, &types.VideoTaskObject{
+		ID:     "vid-object-storage",
+		Status: types.VideoStatusCompleted,
+		Model:  "video-model",
+		Mode:   types.VideoModeTextToVideo,
+		Storage: &types.VideoStorage{
+			Provider: "S3",
+			Bucket:   "video-bucket",
+			Key:      "videos/vid-object-storage.mp4",
+			URL:      "https://storage.example.com/videos/vid-object-storage.mp4",
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/"+task.TaskID+"/content", nil)
+	c.Params = gin.Params{{Key: "id", Value: task.TaskID}}
+	c.Set("id", user.Id)
+
+	GetVideoContent(c)
+
+	require.Equal(t, http.StatusTemporaryRedirect, recorder.Code)
+	require.Equal(t, "https://storage.example.com/videos/vid-object-storage.mp4", recorder.Header().Get("Location"))
+}
+
 func TestUpdateTokiameVideoTasksRefreshesStatusFromWorker(t *testing.T) {
 	setupTokiameVideoTestDB(t)
 
@@ -321,6 +399,160 @@ func TestUpdateTokiameVideoTasksRefreshesStatusFromWorker(t *testing.T) {
 	require.Equal(t, model.TaskStatus(model.TaskStatusSuccess), refreshed.Status)
 	require.Equal(t, 100, refreshed.Progress)
 	require.Contains(t, string(refreshed.Data), `"status":"completed"`)
+}
+
+func TestUpdateTokiameVideoTasksUploadsCompletedVideoToObjectStorage(t *testing.T) {
+	setupTokiameVideoTestDB(t)
+	fakeStorage := &fakeVideoObjectStore{provider: "FakeVideoObjectStore"}
+	restoreStore := objectstore.SetStoreForTest(fakeStorage)
+	t.Cleanup(restoreStore)
+	viper.Set("storage.video.enabled", true)
+	viper.Set("storage.video.prefix", "video-results")
+
+	user := createVideoTestUser(t, "video-group")
+	channel := createVideoTestChannel(t, "video-group", "video-model")
+	task := createVideoTestTask(t, user.Id, model.TaskStatusQueued, &types.VideoTaskObject{
+		ID:     "vid-storage",
+		Status: types.VideoStatusQueued,
+		Model:  "video-model",
+		Mode:   types.VideoModeTextToVideo,
+	})
+	task.ChannelId = channel.Id
+	task.Properties = marshalTaskJSON(&types.VideoTaskProperties{
+		Model: "video-model",
+		Mode:  types.VideoModeTextToVideo,
+	})
+	require.NoError(t, task.Update())
+	model.ChannelGroup.Load()
+
+	setupVideoTaskTunnelSession(t, gateway.Global.Manager, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+		require.Equal(t, http.MethodGet, request.Method)
+		switch request.Path {
+		case "/v1/videos/vid-storage":
+			return &tokilakesvc.TunnelResponse{
+					RequestID:  request.RequestID,
+					StatusCode: http.StatusOK,
+					Headers: map[string]string{
+						"Content-Type": "application/json",
+					},
+				}, mustVideoJSON(t, &types.VideoTaskObject{
+					ID:      "vid-storage",
+					Object:  "video",
+					Status:  types.VideoStatusCompleted,
+					Model:   "video-model",
+					Mode:    types.VideoModeTextToVideo,
+					Created: 200,
+				})
+		case "/v1/videos/vid-storage/content":
+			return &tokilakesvc.TunnelResponse{
+				RequestID:  request.RequestID,
+				StatusCode: http.StatusOK,
+				Headers: map[string]string{
+					"Content-Type":   "video/mp4",
+					"Content-Length": "4",
+				},
+			}, []byte("mp4!")
+		default:
+			t.Fatalf("unexpected request path: %s", request.Path)
+			return nil, nil
+		}
+	})
+
+	taskMap := map[string]*model.Task{task.TaskID: task}
+	err := updateTokiameVideoTasks(context.Background(), channel.Id, []string{task.TaskID}, taskMap)
+	require.NoError(t, err)
+
+	refreshed, err := model.GetTaskByTaskId(model.TaskPlatformTokiameVideo, user.Id, task.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskStatusSuccess, refreshed.Status)
+	require.Equal(t, []byte("mp4!"), fakeStorage.uploadedData)
+	require.Equal(t, "video-results/vid-storage.mp4", fakeStorage.uploadedKey)
+
+	video := videoTaskFromTask(refreshed)
+	require.Equal(t, "/v1/videos/vid-storage/content", video.ContentURL)
+	require.Equal(t, "https://storage.example.com/video-results/vid-storage.mp4", video.DownloadURL)
+	require.NotNil(t, video.Storage)
+	require.Equal(t, "FakeVideoObjectStore", video.Storage.Provider)
+	require.Equal(t, "video-bucket", video.Storage.Bucket)
+	require.Equal(t, "video-results/vid-storage.mp4", video.Storage.Key)
+	require.Equal(t, "https://storage.example.com/video-results/vid-storage.mp4", video.Storage.URL)
+}
+
+func TestReadVideoContentForStorageStreamsAndLimits(t *testing.T) {
+	viper.Set("storage.video.max_size_mb", 1)
+	t.Cleanup(func() {
+		viper.Set("storage.video.max_size_mb", nil)
+	})
+
+	resp := &http.Response{
+		Body:          io.NopCloser(bytes.NewReader([]byte("webm!"))),
+		ContentLength: -1,
+		Header:        http.Header{"Content-Type": []string{"video/webm"}},
+	}
+	reader, contentType, extension, err := readVideoContentForStorage(resp)
+	require.NoError(t, err)
+	require.Equal(t, "video/webm", contentType)
+	require.Equal(t, ".webm", extension)
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, []byte("webm!"), data)
+
+	oversized := bytes.Repeat([]byte("x"), 1024*1024+1)
+	resp = &http.Response{
+		Body:          io.NopCloser(bytes.NewReader(oversized)),
+		ContentLength: -1,
+		Header:        http.Header{"Content-Type": []string{"video/mp4"}},
+	}
+	reader, _, _, err = readVideoContentForStorage(resp)
+	require.NoError(t, err)
+	_, err = io.ReadAll(reader)
+	require.ErrorContains(t, err, "video content is too large")
+}
+
+func TestUpdateTokiameVideoTasksFailsAfterRepeatedPollErrors(t *testing.T) {
+	setupTokiameVideoTestDB(t)
+
+	user := createVideoTestUser(t, "video-group")
+	channel := createVideoTestChannel(t, "video-group", "video-model")
+	task := createVideoTestTask(t, user.Id, model.TaskStatusQueued, &types.VideoTaskObject{
+		ID:     "vid-poll-error",
+		Status: types.VideoStatusQueued,
+		Model:  "video-model",
+		Mode:   types.VideoModeTextToVideo,
+	})
+	task.ChannelId = channel.Id
+	task.Properties = marshalTaskJSON(&types.VideoTaskProperties{
+		Model:          "video-model",
+		Mode:           types.VideoModeTextToVideo,
+		PollErrorCount: videoPollErrorFailureThreshold - 1,
+	})
+	require.NoError(t, task.Update())
+	model.ChannelGroup.Load()
+
+	setupVideoTaskTunnelSession(t, gateway.Global.Manager, channel.Id, func(request *tokilakesvc.TunnelRequest) (*tokilakesvc.TunnelResponse, []byte) {
+		require.Equal(t, http.MethodGet, request.Method)
+		require.Equal(t, "/v1/videos/vid-poll-error", request.Path)
+		return &tokilakesvc.TunnelResponse{
+			RequestID:  request.RequestID,
+			StatusCode: http.StatusInternalServerError,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+		}, []byte(`{"error":{"message":"backend lost task","code":"not_found"}}`)
+	})
+
+	taskMap := map[string]*model.Task{task.TaskID: task}
+	err := updateTokiameVideoTasks(context.Background(), channel.Id, []string{task.TaskID}, taskMap)
+	require.NoError(t, err)
+
+	refreshed, err := model.GetTaskByTaskId(model.TaskPlatformTokiameVideo, user.Id, task.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, model.TaskStatusFailure, refreshed.Status)
+	require.Equal(t, 100, refreshed.Progress)
+	require.Contains(t, refreshed.FailReason, "视频任务轮询连续失败")
+	require.Contains(t, refreshed.FailReason, "backend lost task")
+	require.Contains(t, string(refreshed.Data), `"status":"failed"`)
+	require.Contains(t, string(refreshed.Data), `"video_poll_failed"`)
 }
 
 func setupTokiameVideoTestDB(t *testing.T) {
@@ -484,4 +716,51 @@ func setupVideoTaskTunnelSession(t *testing.T, manager *tokilakesvc.SessionManag
 		manager.Release(session)
 		_ = serverSession.Close()
 	})
+}
+
+type fakeVideoObjectStore struct {
+	provider     string
+	uploadedKey  string
+	uploadedData []byte
+}
+
+func (f *fakeVideoObjectStore) Provider() string {
+	return f.provider
+}
+
+func (f *fakeVideoObjectStore) BucketName() string {
+	return "video-bucket"
+}
+
+func (f *fakeVideoObjectStore) PutObject(_ context.Context, key string, body io.Reader, _ string) (*objectstore.Object, error) {
+	f.uploadedKey = key
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	f.uploadedData = bytes.Clone(data)
+	url, err := f.GetObjectURL(context.Background(), key, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &objectstore.Object{
+		Provider: f.Provider(),
+		Bucket:   f.BucketName(),
+		Key:      key,
+		URL:      url,
+	}, nil
+}
+
+func (f *fakeVideoObjectStore) GetObjectURL(_ context.Context, key string, _ time.Duration) (string, error) {
+	return "https://storage.example.com/" + key, nil
+}
+
+func (f *fakeVideoObjectStore) PresignPutObject(_ context.Context, key string, _ string, _ time.Duration) (*objectstore.PresignedRequest, error) {
+	return &objectstore.PresignedRequest{
+		Provider: f.Provider(),
+		Bucket:   f.BucketName(),
+		Key:      key,
+		Method:   http.MethodPut,
+		URL:      "https://storage.example.com/" + key,
+	}, nil
 }

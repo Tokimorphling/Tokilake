@@ -11,6 +11,7 @@ import (
 	"one-api/common/config"
 	"one-api/common/logger"
 	"one-api/common/notify"
+	"one-api/common/objectstore"
 	"one-api/common/oidc"
 	"one-api/common/redis"
 	"one-api/common/requester"
@@ -90,6 +91,7 @@ func main() {
 	notify.InitNotifier()
 	cron.InitCron()
 	storage.InitStorage()
+	objectstore.InitObjectStore()
 	search.InitSearcher()
 	// 初始化安全检查器
 	safty.InitSaftyTools()

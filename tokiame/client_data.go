@@ -622,17 +622,6 @@ func rewriteMultipartModelField(body []byte, contentType string, upstreamModel s
 			return nil, "", fmt.Errorf("read multipart part: %w", partErr)
 		}
 
-		partBody, readErr := io.ReadAll(part)
-		_ = part.Close()
-		if readErr != nil {
-			return nil, "", fmt.Errorf("read multipart part body: %w", readErr)
-		}
-
-		if part.FormName() == "model" && part.FileName() == "" {
-			partBody = []byte(upstreamModel)
-			modelWritten = true
-		}
-
 		mimeHeader := make(textproto.MIMEHeader)
 		for key, values := range part.Header {
 			for _, value := range values {
@@ -643,8 +632,23 @@ func rewriteMultipartModelField(body []byte, contentType string, upstreamModel s
 		if createErr != nil {
 			return nil, "", fmt.Errorf("create multipart part: %w", createErr)
 		}
-		if _, writeErr := newPart.Write(partBody); writeErr != nil {
-			return nil, "", fmt.Errorf("write multipart part: %w", writeErr)
+		if part.FormName() == "model" && part.FileName() == "" {
+			modelWritten = true
+			if _, writeErr := newPart.Write([]byte(upstreamModel)); writeErr != nil {
+				_ = part.Close()
+				return nil, "", fmt.Errorf("write multipart model field: %w", writeErr)
+			}
+			if closeErr := part.Close(); closeErr != nil {
+				return nil, "", fmt.Errorf("close multipart model field: %w", closeErr)
+			}
+			continue
+		}
+		if _, copyErr := io.Copy(newPart, part); copyErr != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("copy multipart part: %w", copyErr)
+		}
+		if closeErr := part.Close(); closeErr != nil {
+			return nil, "", fmt.Errorf("close multipart part: %w", closeErr)
 		}
 	}
 

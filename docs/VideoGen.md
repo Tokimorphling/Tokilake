@@ -183,7 +183,48 @@ Download semantics:
 
 - `409 video_not_ready`: the task has not completed.
 - `502 video_failed`: the task failed upstream.
+- `307`: Tokilake authenticated the request and redirected to object storage or an upstream direct URL.
 - `200`: Tokilake streams the video bytes through Tokiame.
+
+## Object Storage
+
+For production, enable object storage so repeated user downloads do not all flow through Tokilake/Tokiame.
+
+```yaml
+storage:
+  video:
+    enabled: true
+    prefix: "videos"
+    max_size_mb: 1024
+  object:
+    provider: "s3_compatible"
+    endpoint: "https://xxxxxx.r2.cloudflarestorage.com"
+    region: "auto"
+    cdnurl: "https://cdn.example.com"
+    bucketName: "tokilake-media"
+    accessKeyId: "..."
+    accessKeySecret: "..."
+    forcePathStyle: true
+```
+
+When enabled, Tokilake fetches the completed video once from Tokiame and uploads it through the S3-compatible object store adapter. The task object includes storage metadata:
+
+```json
+{
+  "id": "video_gen_123",
+  "status": "completed",
+  "content_url": "/v1/videos/video_gen_123/content",
+  "download_url": "https://cdn.example.com/videos/video_gen_123.mp4",
+  "storage": {
+    "provider": "s3_compatible",
+    "bucket": "tokilake-media",
+    "key": "videos/video_gen_123.mp4",
+    "url": "https://cdn.example.com/videos/video_gen_123.mp4"
+  }
+}
+```
+
+Clients can keep using `content_url`; Tokilake authenticates the request and redirects to the current object storage URL. If `cdnurl` is empty, Tokilake generates a temporary signed download URL from the stored bucket/key.
 
 ## Python Example
 

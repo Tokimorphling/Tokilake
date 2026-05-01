@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"one-api/common"
 	"one-api/common/config"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const videoPollErrorFailureThreshold = 20
 
 type TokiameVideoTask struct {
 	base.TaskBase
@@ -195,27 +198,22 @@ func updateTokiameVideoTasks(ctx context.Context, channelID int, taskIDs []strin
 		videoProvider.SetOriginalModel(properties.Model)
 		response, errWithCode := videoProvider.GetVideo(taskID)
 		if errWithCode != nil {
-			logger.LogError(ctx, fmt.Sprintf("Get video task %s error: %s", taskID, errWithCode.Message))
+			recordVideoPollError(ctx, task, errWithCode)
 			continue
 		}
+		pollErrorsCleared := clearVideoPollErrors(task)
 
 		merged := mergeVideoTaskObject(task, response)
-		if !videoTaskNeedUpdate(task, merged) {
+		if !videoTaskNeedUpdate(task, merged) && !pollErrorsCleared {
 			continue
 		}
 
 		wasTerminal := task.Status == model.TaskStatusFailure || task.Status == model.TaskStatusSuccess
+		persistCompletedVideoToObjectStorage(ctx, videoProvider, task, merged)
 		applyVideoTaskState(task, merged)
 		if task.Status == model.TaskStatusFailure && !wasTerminal {
 			logger.LogError(ctx, task.TaskID+" 构建失败，"+task.FailReason)
-			quota := task.Quota
-			if quota > 0 {
-				if err := model.IncreaseUserQuota(task.UserId, quota); err != nil {
-					logger.LogError(ctx, "fail to increase user quota: "+err.Error())
-				}
-				logContent := fmt.Sprintf("异步任务执行失败 %s，补偿 %s", task.TaskID, common.LogQuota(quota))
-				model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
-			}
+			refundFailedVideoTaskQuota(ctx, task)
 		}
 
 		if err := task.Update(); err != nil {
@@ -223,6 +221,93 @@ func updateTokiameVideoTasks(ctx context.Context, channelID int, taskIDs []strin
 		}
 	}
 	return nil
+}
+
+func recordVideoPollError(ctx context.Context, task *model.Task, errWithCode *types.OpenAIErrorWithStatusCode) {
+	if task == nil {
+		return
+	}
+	message := videoPollErrorMessage(errWithCode)
+	properties := propertiesFromTask(task)
+	properties.PollErrorCount++
+	properties.LastPollError = message
+	properties.LastPollErrorAt = time.Now().Unix()
+	task.Properties = marshalTaskJSON(properties)
+
+	logger.LogError(ctx, fmt.Sprintf(
+		"Get video task %s error (%d/%d): %s",
+		task.TaskID,
+		properties.PollErrorCount,
+		videoPollErrorFailureThreshold,
+		message,
+	))
+
+	if properties.PollErrorCount < videoPollErrorFailureThreshold {
+		if err := task.Update(); err != nil {
+			logger.SysError("UpdateTask poll error state error: " + err.Error())
+		}
+		return
+	}
+
+	failReason := fmt.Sprintf("视频任务轮询连续失败 %d 次: %s", properties.PollErrorCount, message)
+	wasTerminal := task.Status == model.TaskStatusFailure || task.Status == model.TaskStatusSuccess
+	video := videoTaskFromTask(task)
+	video.Status = types.VideoStatusFailed
+	video.Error = &types.VideoTaskError{
+		Message: failReason,
+		Type:    "upstream_error",
+		Code:    "video_poll_failed",
+	}
+	applyVideoTaskState(task, video)
+	if !wasTerminal {
+		logger.LogError(ctx, task.TaskID+" 构建失败，"+task.FailReason)
+		refundFailedVideoTaskQuota(ctx, task)
+	}
+	if err := task.Update(); err != nil {
+		logger.SysError("UpdateTask task error: " + err.Error())
+	}
+}
+
+func clearVideoPollErrors(task *model.Task) bool {
+	if task == nil {
+		return false
+	}
+	properties := propertiesFromTask(task)
+	if properties.PollErrorCount == 0 && properties.LastPollError == "" && properties.LastPollErrorAt == 0 {
+		return false
+	}
+	properties.PollErrorCount = 0
+	properties.LastPollError = ""
+	properties.LastPollErrorAt = 0
+	task.Properties = marshalTaskJSON(properties)
+	return true
+}
+
+func videoPollErrorMessage(errWithCode *types.OpenAIErrorWithStatusCode) string {
+	if errWithCode == nil {
+		return "get video task failed"
+	}
+	message := strings.TrimSpace(errWithCode.Message)
+	if message == "" {
+		message = "get video task failed"
+	}
+	code := strings.TrimSpace(fmt.Sprint(errWithCode.Code))
+	if code == "" || code == "<nil>" {
+		return message
+	}
+	return fmt.Sprintf("%s (%s)", message, code)
+}
+
+func refundFailedVideoTaskQuota(ctx context.Context, task *model.Task) {
+	if task == nil || task.Quota <= 0 {
+		return
+	}
+	if err := model.IncreaseUserQuota(task.UserId, task.Quota); err != nil {
+		logger.LogError(ctx, "fail to increase user quota: "+err.Error())
+		return
+	}
+	logContent := fmt.Sprintf("异步任务执行失败 %s，补偿 %s", task.TaskID, common.LogQuota(task.Quota))
+	model.RecordLog(task.UserId, model.LogTypeSystem, logContent)
 }
 
 func videoTaskNeedUpdate(task *model.Task, video *types.VideoTaskObject) bool {

@@ -1,20 +1,35 @@
 ---
-title: "图床配置"
+title: "存储配置"
 layout: doc
 outline: deep
 lastUpdated: true
 ---
 
-# 图床配置
+# 存储配置
 
-因为图片生成有些供应商不提供 url，所以如果设置了图床，那么会上传到图床后返回链接。
+因为图片生成有些供应商不提供 url，所以如果设置了存储，那么会上传到存储后返回链接。异步视频生成也可以使用对象存储保存完成后的视频结果，避免用户下载时反复经过 Tokilake 和 Tokiame。
 
 在使用`gemini`支持图像输出的模型时，如果图床设置不正确，会导致图片返回失败。（gemini 原生 API 接口不需要配置）
 
-可以设置多个图床， 上传失败后，会自动使用下一个图床上传。
+图片可以设置多个存储，上传失败后会自动使用下一个存储。视频结果使用独立的 `storage.object`，统一走 S3-compatible 协议；Cloudflare R2、MinIO、AWS S3、AliOSS S3 Endpoint 都放在这一套配置里。
 
 ```yaml
-storage: # 存储设置 (可选,主要用于图片生成，有些供应商不提供url，只能返回base64图片，设置后可以正常返回url格式的图片生成)
+storage: # 存储设置 (可选,用于图片生成和异步视频结果落地)
+  video: # 异步视频结果落地设置
+    enabled: false # 开启后，视频完成时会上传到 storage.object，并在下载时跳转到对象存储 URL
+    prefix: "videos" # 对象 key 前缀
+    max_size_mb: 1024 # 单个视频最大上传大小，超过后保留原有 Tokiame 内容接口
+  object: # 异步视频对象存储，统一使用 S3-compatible 协议
+    provider: "s3_compatible" # 可填写 s3_compatible、r2、minio、alioss 等标识
+    endpoint: "" # Endpoint，比如 https://xxxxxx.r2.cloudflarestorage.com 或 https://oss-cn-beijing.aliyuncs.com
+    region: "auto" # R2 可用 auto；AWS/AliOSS 建议填写真实 region
+    cdnurl: "" # 公共访问域名；不填则生成临时签名下载 URL
+    bucketName: "" # Bucket 名称
+    accessKeyId: "" # accessKeyId
+    accessKeySecret: "" # accessKeySecret
+    sessionToken: "" # 可选，临时凭据 token
+    forcePathStyle: false # MinIO/R2 常用 true；AliOSS/AWS 通常 false
+    presign_ttl_seconds: 3600 # 未配置 cdnurl 时，签名 URL 默认有效期
   smms: # sm.ms 图床设置
     secret: "" # 你的 sm.ms API 密钥
   imgur:

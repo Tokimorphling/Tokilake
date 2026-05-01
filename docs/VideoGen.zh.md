@@ -183,7 +183,48 @@ curl "$TOKILAKE_BASE_URL/v1/videos/video_gen_123/content" \
 
 - `409 video_not_ready`: 任务尚未完成。
 - `502 video_failed`: 上游任务失败。
+- `307`: 已配置对象存储或后端直链时，Tokilake 鉴权后跳转到下载 URL。
 - `200`: Tokilake 通过 Tokiame 流式返回视频二进制内容。
+
+## 对象存储
+
+生产环境建议开启对象存储，避免大量用户下载视频时所有视频流量都经过 Tokilake/Tokiame。
+
+```yaml
+storage:
+  video:
+    enabled: true
+    prefix: "videos"
+    max_size_mb: 1024
+  object:
+    provider: "s3_compatible"
+    endpoint: "https://xxxxxx.r2.cloudflarestorage.com"
+    region: "auto"
+    cdnurl: "https://cdn.example.com"
+    bucketName: "tokilake-media"
+    accessKeyId: "..."
+    accessKeySecret: "..."
+    forcePathStyle: true
+```
+
+开启后，任务完成时 Tokilake 会从 Tokiame 拉取一次视频结果，并通过 S3-compatible 对象存储适配器上传。任务对象会包含存储信息：
+
+```json
+{
+  "id": "video_gen_123",
+  "status": "completed",
+  "content_url": "/v1/videos/video_gen_123/content",
+  "download_url": "https://cdn.example.com/videos/video_gen_123.mp4",
+  "storage": {
+    "provider": "s3_compatible",
+    "bucket": "tokilake-media",
+    "key": "videos/video_gen_123.mp4",
+    "url": "https://cdn.example.com/videos/video_gen_123.mp4"
+  }
+}
+```
+
+客户端仍然可以请求 `content_url`。Tokilake 会先鉴权，然后跳转到当前对象存储 URL；如果没有配置 `cdnurl`，Tokilake 会根据保存的 bucket/key 生成临时签名下载 URL。
 
 ## Python 示例
 

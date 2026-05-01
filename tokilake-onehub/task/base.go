@@ -1,12 +1,15 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"one-api/common"
+	"one-api/common/objectstore"
 	"one-api/model"
 	"one-api/types"
 
@@ -120,6 +123,61 @@ func videoContentPath(taskID string) string {
 	return fmt.Sprintf("/v1/videos/%s/content", strings.TrimSpace(taskID))
 }
 
+func videoExternalDownloadURL(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		switch strings.ToLower(parsed.Scheme) {
+		case "http", "https":
+			return parsed.String()
+		}
+	}
+	return ""
+}
+
+func videoExternalDownloadURLFromTask(task *model.Task) string {
+	if task == nil || len(task.Data) == 0 {
+		return ""
+	}
+	video := &types.VideoTaskObject{}
+	if err := json.Unmarshal(task.Data, video); err != nil {
+		return ""
+	}
+	return videoExternalDownloadURL(videoStorageDownloadURL(video), video.DownloadURL, video.ContentURL)
+}
+
+func videoStorageDownloadURLFromTask(task *model.Task) string {
+	if task == nil || len(task.Data) == 0 {
+		return ""
+	}
+	video := &types.VideoTaskObject{}
+	if err := json.Unmarshal(task.Data, video); err != nil {
+		return ""
+	}
+	return videoStorageDownloadURL(video)
+}
+
+func videoStorageDownloadURL(video *types.VideoTaskObject) string {
+	if video == nil || video.Storage == nil {
+		return ""
+	}
+	key := strings.TrimSpace(video.Storage.Key)
+	if key != "" {
+		url, err := objectstore.GetObjectURL(context.Background(), strings.TrimSpace(video.Storage.Provider), key)
+		if err == nil && strings.TrimSpace(url) != "" {
+			video.Storage.URL = url
+			return videoExternalDownloadURL(url)
+		}
+	}
+	return videoExternalDownloadURL(video.Storage.URL)
+}
+
 func propertiesFromRequest(request *types.VideoRequest) *types.VideoTaskProperties {
 	if request == nil {
 		return &types.VideoTaskProperties{}
@@ -167,6 +225,7 @@ func mergeVideoTaskObject(task *model.Task, response *types.VideoTaskObject) *ty
 	if response != nil {
 		*merged = *response
 	}
+	upstreamDownloadURL := videoExternalDownloadURL(videoStorageDownloadURL(merged), merged.DownloadURL, merged.ContentURL)
 	if task != nil && strings.TrimSpace(merged.ID) == "" {
 		merged.ID = strings.TrimSpace(task.TaskID)
 	}
@@ -208,7 +267,11 @@ func mergeVideoTaskObject(task *model.Task, response *types.VideoTaskObject) *ty
 	}
 	if merged.ID != "" {
 		merged.ContentURL = videoContentPath(merged.ID)
-		merged.DownloadURL = merged.ContentURL
+		if upstreamDownloadURL != "" {
+			merged.DownloadURL = upstreamDownloadURL
+		} else {
+			merged.DownloadURL = merged.ContentURL
+		}
 	}
 	if merged.Status == types.VideoStatusFailed && merged.Error == nil && task != nil && task.FailReason != "" {
 		merged.Error = &types.VideoTaskError{

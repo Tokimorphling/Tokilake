@@ -95,6 +95,56 @@ func TestPrepareSGLangVideoCreateKeepsJSONAndMapsReferenceURL(t *testing.T) {
 	}
 }
 
+func TestPrepareVLLMOmniVideoCreateRewritesMultipartModelAndKeepsFile(t *testing.T) {
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	if err := writer.WriteField("model", "wan-public"); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	if err := writer.WriteField("prompt", "animate this image"); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+	filePart, err := writer.CreateFormFile("input_reference", "frame.png")
+	if err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if _, err = filePart.Write([]byte("image-bytes")); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	request := &core.TunnelRequest{
+		RouteKind: core.TunnelRouteKindVideosCreate,
+		Method:    http.MethodPost,
+		Path:      "/v1/videos",
+		Body:      requestBody.Bytes(),
+	}
+	headers := map[string]string{"Content-Type": writer.FormDataContentType()}
+	target := &ResolvedTarget{
+		ModelName:     "wan-public",
+		UpstreamModel: "wan-backend",
+		BackendType:   "vllm_omni",
+	}
+
+	body, outHeaders, err := prepareRequestForTarget(request, headers, target)
+	if err != nil {
+		t.Fatalf("prepare request: %v", err)
+	}
+
+	fields := parseMultipartFields(t, body, headerValue(outHeaders, "Content-Type"))
+	if fields["model"] != "wan-backend" {
+		t.Fatalf("model = %q, want wan-backend", fields["model"])
+	}
+	if fields["prompt"] != "animate this image" {
+		t.Fatalf("prompt = %q", fields["prompt"])
+	}
+	if fields["input_reference"] != "image-bytes" {
+		t.Fatalf("input_reference = %q", fields["input_reference"])
+	}
+}
+
 func TestAdaptVLLMOmniVideoResponseNormalizesTaskPayload(t *testing.T) {
 	request := &core.TunnelRequest{
 		RouteKind: core.TunnelRouteKindVideosGet,
