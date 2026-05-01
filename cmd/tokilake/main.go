@@ -44,7 +44,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	
+
 	connectHandler := func(w http.ResponseWriter, r *http.Request) {
 		tokenKey, tkn, authErr := gw.AuthenticateConnectRequest(r.Context(), r)
 		if authErr != nil {
@@ -283,6 +283,6 @@ func (r *MemoryWorkerRegistry) CleanupWorker(_ context.Context, session *tokilak
 // StdLogger logs to stdout/stderr.
 type StdLogger struct{}
 
-func (l *StdLogger) SysLog(msg string)  { log.Printf("[INFO] %s", msg) }
+func (l *StdLogger) SysLog(msg string)   { log.Printf("[INFO] %s", msg) }
 func (l *StdLogger) SysError(msg string) { log.Printf("[ERROR] %s", msg) }
 func (l *StdLogger) FatalLog(msg string) { log.Fatalf("[FATAL] %s", msg) }

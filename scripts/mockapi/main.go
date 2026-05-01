@@ -129,8 +129,8 @@ func handleStreamResponse(w http.ResponseWriter, model, reply string) {
 		if isLast {
 			data["choices"] = []map[string]any{
 				{
-					"index": i,
-					"delta": map[string]string{},
+					"index":         i,
+					"delta":         map[string]string{},
 					"finish_reason": "stop",
 				},
 			}

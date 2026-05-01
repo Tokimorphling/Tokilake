@@ -10,8 +10,8 @@ import (
 	"strings"
 	"syscall"
 
-	"one-api/pkg/log"
 	tokiame "github.com/Tokimorphling/Tokilake/tokiame"
+	"one-api/pkg/log"
 )
 
 func main() {
