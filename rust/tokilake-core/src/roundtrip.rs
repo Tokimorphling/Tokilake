@@ -216,6 +216,11 @@ impl<T: TunnelSession> Service<RoundtripRequest> for Roundtrip<T> {
 
             response_buffer.extend_from_slice(&buf[..n]);
 
+            // Limit max frame size to prevent OOM (16 MB)
+            if response_buffer.len() > 16 * 1024 * 1024 {
+                return Err(TunnelError::protocol("response frame too large (potential backpressure/OOM protection)"));
+            }
+
             if let Some(newline_pos) = response_buffer.iter().position(|&b| b == b'\n') {
                 let line = response_buffer[..newline_pos].to_vec();
                 response_buffer.drain(..=newline_pos);
@@ -321,6 +326,11 @@ async fn pump_response<S: TunnelStream>(
                 }
 
                 response_buffer.extend_from_slice(&buf[..n]);
+
+                // Limit max frame size to prevent OOM (16 MB)
+                if response_buffer.len() > 16 * 1024 * 1024 {
+                    return Err(TunnelError::protocol("response frame too large (potential backpressure/OOM protection)"));
+                }
 
                 // Try to parse complete JSON lines
                 while let Some(newline_pos) = response_buffer.iter().position(|&b| b == b'\n') {
