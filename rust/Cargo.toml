@@ -1,5 +1,5 @@
 [workspace]
-members = ["tokilake-core", "tokilake-smux", "tokilake-server"]
+members = ["tokilake-core", "tokilake-smux", "tokilake-server", "tokilake"]
 resolver = "2"
 
 [workspace.package]
@@ -8,8 +8,6 @@ categories = [
     "asynchronous",
     "network-programming",
     "development-tools",
-    "ai",
-    "llm-gateway",
 ]
 edition = "2024"
 keywords = ["gateway", "proxy", "tunnel", "async"]
