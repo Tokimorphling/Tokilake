@@ -154,7 +154,7 @@ else
 fi
 
 log "Building Rust tokilake server..."
-cd "$ROOT_DIR/rust/tokilake-core"
+cd "$ROOT_DIR/rust"
 cargo build --release --bin tokilake-server 2>&1
 RUST_SERVER="$ROOT_DIR/rust/target/release/tokilake-server"
 log "Build complete."

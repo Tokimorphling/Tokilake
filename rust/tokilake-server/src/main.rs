@@ -17,7 +17,7 @@ use tokilake_core::{
     session::{GatewaySession, InFlightRequest, SessionManager},
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     sync::{mpsc, RwLock},
 };
 use tracing::{info, warn};
@@ -386,15 +386,14 @@ async fn serve_session(
 
     // Create smux session over WebSocket stream
     let ws_stream = WebSocketStream::new(ws_in_rx, ws_out_tx.clone());
-    let smux_config = smux::ConfigBuilder::new()
-        .enable_keep_alive(false)
-        .build()
-        .unwrap_or_default();
+    let smux_config = tokilake_smux::Config {
+        version: 1,
+        keep_alive_disabled: true,
+        ..Default::default()
+    };
 
-    let smux_session = smux::Session::server(ws_stream, smux_config)
-        .await
-        .map_err(|e| TunnelError::Transport(std::io::Error::other(e)))?;
-    let smux_session = Arc::new(smux_session);
+    let smux_session = tokilake_smux::Session::server(ws_stream, smux_config);
+    let smux_session = Arc::new(tokio::sync::Mutex::new(smux_session));
 
     // Store control channel and smux session in session
     {
@@ -406,58 +405,80 @@ async fn serve_session(
     }
 
     // Accept control stream (first stream)
-    let control_stream = match smux_session.accept_stream().await {
-        Ok(stream) => stream,
-        Err(e) => {
-            return Err(TunnelError::Transport(std::io::Error::other(e)));
+    let control_stream = {
+        let mut smux = smux_session.lock().await;
+        match smux.accept().await {
+            Some(stream) => stream,
+            None => {
+                return Err(TunnelError::StreamClosed);
+            }
         }
     };
 
-    let (mut control_reader, mut control_writer) = tokio::io::split(control_stream);
-
-    // Create codec for control stream
-    let mut control_codec =
-        tokilake_core::codec::ControlCodec::new(control_reader, tokio::io::sink());
+    let mut control_stream = control_stream;
 
     // WebSocket connections are already authenticated via the Authorization header
     let mut authenticated = true;
     let mut worker_registered = false;
     let mut worker_id = 0;
 
-    // Main control message loop
+    // Main control message loop - read directly from stream
+    let mut control_buf = Vec::new();
     loop {
-        // Read next control message
-        let msg = match control_codec.read_message().await {
-            Ok(Some(ctrl)) => {
-                info!("received control message: type={}", ctrl.msg_type);
-                ctrl
-            }
-            Ok(None) => {
+        // Read data from stream
+        let mut read_buf = vec![0u8; 4096];
+        let n = match control_stream.read(&mut read_buf).await {
+            Ok(0) => {
                 info!("control stream closed");
                 break;
             }
+            Ok(n) => n,
             Err(e) => {
                 warn!("control stream error: {}", e);
                 break;
             }
         };
+        control_buf.extend_from_slice(&read_buf[..n]);
 
-        let response = handle_control_message(
-            state,
-            session,
-            &msg,
-            &mut authenticated,
-            &mut worker_registered,
-            &mut worker_id,
-        )
-        .await;
+        // Parse complete messages from buffer
+        while let Some(pos) = control_buf.iter().position(|&b| b == b'\n') {
+            let line = control_buf[..pos].to_vec();
+            control_buf.drain(..=pos);
 
-        if let Some(resp) = response {
-            let resp_data = serde_json::to_vec(&resp).unwrap();
-            let mut resp_with_newline = resp_data;
-            resp_with_newline.push(b'\n');
-            if control_writer.write_all(&resp_with_newline).await.is_err() {
-                break;
+            let trimmed = String::from_utf8_lossy(&line);
+            let trimmed = trimmed.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let msg = match serde_json::from_str::<ControlMessage>(trimmed) {
+                Ok(m) => {
+                    info!("received control message: type={}", m.msg_type);
+                    m
+                }
+                Err(e) => {
+                    warn!("control message parse error: {}", e);
+                    continue;
+                }
+            };
+
+            let response = handle_control_message(
+                state,
+                session,
+                &msg,
+                &mut authenticated,
+                &mut worker_registered,
+                &mut worker_id,
+            )
+            .await;
+
+            if let Some(resp) = response {
+                let resp_data = serde_json::to_vec(&resp).unwrap();
+                let mut resp_with_newline = resp_data;
+                resp_with_newline.push(b'\n');
+                if control_stream.write_all(&resp_with_newline).await.is_err() {
+                    break;
+                }
             }
         }
     }
@@ -772,25 +793,26 @@ async fn chat_completions_handler(
     });
 
     // Open a data stream to the worker
-    let data_stream = match smux_session.open_stream().await {
-        Ok(stream) => stream,
-        Err(e) => {
-            state.session_manager.remove_request(&request_id);
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": format!("failed to open data stream: {}", e)})),
-            )
-                .into_response();
+    let mut data_stream = {
+        let mut smux = smux_session.lock().await;
+        match smux.open().await {
+            Some(stream) => stream,
+            None => {
+                state.session_manager.remove_request(&request_id);
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({"error": "failed to open data stream"})),
+                )
+                    .into_response();
+            }
         }
     };
-
-    let (mut stream_reader, mut stream_writer) = tokio::io::split(data_stream);
 
     // Send tunnel request on data stream
     let req_data = serde_json::to_vec(&tunnel_req).unwrap();
     let mut req_with_newline = req_data;
     req_with_newline.push(b'\n');
-    if let Err(e) = stream_writer.write_all(&req_with_newline).await {
+    if let Err(e) = data_stream.write_all(&req_with_newline).await {
         state.session_manager.remove_request(&request_id);
         return (
             StatusCode::BAD_GATEWAY,
@@ -801,7 +823,7 @@ async fn chat_completions_handler(
 
     // Read response from data stream
     let mut response_codec =
-        tokilake_core::codec::TunnelCodec::new(stream_reader, tokio::io::sink());
+        tokilake_core::codec::TunnelCodec::new(data_stream, tokio::io::sink());
 
     // Read first response frame
     let first_frame =

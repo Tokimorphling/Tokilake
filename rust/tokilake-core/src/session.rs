@@ -28,7 +28,7 @@ pub struct GatewaySession {
     // Control stream write half (for sending messages to worker)
     pub control_tx:    Option<tokio::sync::mpsc::Sender<Vec<u8>>>,
     // Smux session for opening data streams
-    pub smux_session:  Option<Arc<smux::Session>>,
+    pub smux_session:  Option<Arc<tokio::sync::Mutex<tokilake_smux::Session>>>,
 }
 
 pub struct TunnelStreamRequest {
