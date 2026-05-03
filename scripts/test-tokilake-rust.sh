@@ -35,6 +35,9 @@ parse_args() {
         case $1 in
             -c|--config)
                 CUSTOM_CONFIG="$2"
+                if [[ "$CUSTOM_CONFIG" != /* ]]; then
+                    CUSTOM_CONFIG="$PWD/$CUSTOM_CONFIG"
+                fi
                 shift 2
                 ;;
             -t|--token)
@@ -93,12 +96,12 @@ wait_for_port() {
 extract_json_value() {
     local json_file=$1
     local key=$2
-    grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$json_file" | head -1 | sed 's/.*" *: *"\([^"]*\)".*/\1/'
+    grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$json_file" | head -1 | sed 's/.*" *: *"\([^"]*\)".*/\1/' || true
 }
 
 extract_port_from_url() {
     local url=$1
-    echo "$url" | grep -oE ':[0-9]+' | head -1 | tr -d ':'
+    echo "$url" | grep -oE ':[0-9]+' | head -1 | tr -d ':' || true
 }
 
 parse_args "$@"
@@ -136,7 +139,7 @@ if [ -n "$CUSTOM_CONFIG" ]; then
     fi
 
     # Extract first model from config
-    CONFIG_MODEL=$(grep -oE '"[a-zA-Z0-9._-]+" *:' "$CUSTOM_CONFIG" | grep -v -E '"(gateway_url|token|namespace|node_name|group|transport_mode|model_targets|heartbeat_interval_seconds|reconnect_delay_seconds|url|api_keys|mapped_name|backend_type|quic_endpoint|insecure_skip_verify)"' | head -1 | tr -d '":')
+    CONFIG_MODEL=$(grep -oE '"[a-zA-Z0-9._-]+" *:' "$CUSTOM_CONFIG" | grep -v -E '"(gateway_url|token|namespace|node_name|group|transport_mode|model_targets|heartbeat_interval_seconds|reconnect_delay_seconds|url|api_keys|mapped_name|backend_type|quic_endpoint|insecure_skip_verify)"' | head -1 | tr -d '":' || true)
     if [ -n "$CONFIG_MODEL" ]; then
         TEST_MODEL="$CONFIG_MODEL"
         log "Using model from config: $TEST_MODEL"
@@ -179,7 +182,9 @@ wait_for_port "$TOKILAKE_PORT"
 log "Tokilake server started."
 
 if [ -n "$CUSTOM_CONFIG" ]; then
-    TOKIAME_CONFIG_FILE="$CUSTOM_CONFIG"
+    TOKIAME_CONFIG_FILE=$(mktemp)
+    TEMP_FILES+=("$TOKIAME_CONFIG_FILE")
+    sed "s|\"gateway_url\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"gateway_url\": \"ws://localhost:$TOKILAKE_PORT/connect\"|" "$CUSTOM_CONFIG" > "$TOKIAME_CONFIG_FILE"
 else
     TOKIAME_CONFIG_FILE=$(mktemp)
     TEMP_FILES+=("$TOKIAME_CONFIG_FILE")
@@ -270,7 +275,7 @@ if [ "$USE_MOCK_API" = true ]; then
 else
     if echo "$STREAM_RESPONSE" | grep -q "data:"; then
         log "Test 2 passed!"
-        log "Stream response preview: $(echo "$STREAM_RESPONSE" | head -3)"
+        log "Stream response preview: $(echo "$STREAM_RESPONSE" | head -30)"
     else
         log "Test 2: No streaming data received (external API may be unreachable)"
     fi
