@@ -1,0 +1,4 @@
+    Updating `rsproxy-sparse` index
+error: no matching package named `toasty-sqlite` found
+location searched: `rsproxy-sparse` index (which is replacing registry `crates-io`)
+required by package `tokilake v0.1.0 (/home/asuka/codes/Tokilake/rust/tokilake)`

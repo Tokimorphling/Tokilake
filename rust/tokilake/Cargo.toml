@@ -10,3 +10,16 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+toasty = { version = "0.5.0", features = ["sqlite"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+hyper = "1.0"
+hyper-util = { version = "0.1", features = ["full"] }
+http = "1.0"
+http-body-util = "0.1"
+tower = "0.4"
+tower-service = "0.3"
+tokilake-core = { workspace = true }
