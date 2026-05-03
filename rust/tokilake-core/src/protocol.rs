@@ -67,7 +67,7 @@ pub mod route_kind {
     pub const CHAT_COMPLETIONS: &str = "chat_completions";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ControlMessage {
     #[serde(rename = "type")]
     pub msg_type:       String,
@@ -92,45 +92,29 @@ pub struct ControlMessage {
 impl ControlMessage {
     pub fn auth(token: impl Into<String>) -> Self {
         Self {
-            msg_type:       control_type::AUTH.to_string(),
-            request_id:     None,
-            auth:           Some(AuthMessage {
+            msg_type: control_type::AUTH.to_string(),
+            auth: Some(AuthMessage {
                 token: token.into(),
             }),
-            register:       None,
-            heartbeat:      None,
-            models_sync:    None,
-            cancel_request: None,
-            ack:            None,
-            error:          None,
+            ..Default::default()
         }
     }
 
     pub fn ack(request_id: impl Into<String>, ack: AckMessage) -> Self {
         Self {
-            msg_type:       control_type::ACK.to_string(),
-            request_id:     Some(request_id.into()),
-            auth:           None,
-            register:       None,
-            heartbeat:      None,
-            models_sync:    None,
-            cancel_request: None,
-            ack:            Some(ack),
-            error:          None,
+            msg_type: control_type::ACK.to_string(),
+            request_id: Some(request_id.into()),
+            ack: Some(ack),
+            ..Default::default()
         }
     }
 
     pub fn error_msg(request_id: impl Into<String>, error: ErrorMessage) -> Self {
         Self {
-            msg_type:       control_type::ERROR.to_string(),
-            request_id:     Some(request_id.into()),
-            auth:           None,
-            register:       None,
-            heartbeat:      None,
-            models_sync:    None,
-            cancel_request: None,
-            ack:            None,
-            error:          Some(error),
+            msg_type: control_type::ERROR.to_string(),
+            request_id: Some(request_id.into()),
+            error: Some(error),
+            ..Default::default()
         }
     }
 }

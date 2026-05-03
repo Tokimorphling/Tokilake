@@ -14,6 +14,8 @@ pub mod codec;
 pub mod error;
 pub mod gateway;
 pub mod protocol;
+pub mod roundtrip;
+pub mod service;
 pub mod session;
 pub mod tunnel;
 

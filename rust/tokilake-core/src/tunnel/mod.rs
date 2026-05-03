@@ -1,21 +1,20 @@
 use crate::error::TunnelError;
 use std::future::Future;
 
+pub mod quic;
+pub mod smux;
+
 /// Tunnel session trait - multiplexed stream container.
-///
-/// Uses `impl Future` returns instead of `async_trait` for zero overhead.
 pub trait TunnelSession: Send + Sync + 'static {
     type Stream: TunnelStream;
-    type AcceptFuture<'a>: Future<Output = Result<Option<Self::Stream>, TunnelError>> + Send
-    where
-        Self: 'a;
-    type OpenFuture<'a>: Future<Output = Result<Self::Stream, TunnelError>> + Send
-    where
-        Self: 'a;
 
-    fn accept_stream(&self) -> Self::AcceptFuture<'_>;
-    fn open_stream(&self) -> Self::OpenFuture<'_>;
-    fn close(&self) -> impl Future<Output = Result<(), TunnelError>> + Send;
+    fn accept_stream(
+        &mut self,
+    ) -> impl Future<Output = Result<Option<Self::Stream>, TunnelError>> + Send + '_;
+    fn open_stream(
+        &mut self,
+    ) -> impl Future<Output = Result<Self::Stream, TunnelError>> + Send + '_;
+    fn close(&self) -> impl Future<Output = Result<(), TunnelError>> + Send + '_;
     fn is_alive(&self) -> bool;
 }
 
@@ -29,8 +28,8 @@ pub trait TunnelStream: Send + Sync + 'static {
         &'a mut self,
         buf: &'a [u8],
     ) -> impl Future<Output = Result<usize, TunnelError>> + Send + 'a;
-    fn flush(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send;
-    fn close(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send;
+    fn flush(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send + '_;
+    fn close(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send + '_;
 }
 
 /// In-memory stream for testing.
@@ -56,39 +55,47 @@ pub mod memory {
     }
 
     pub fn create_stream_pair() -> (MemoryStream, MemoryStream) {
-        let (tx1, rx1) = mpsc::channel(32);
-        let (tx2, rx2) = mpsc::channel(32);
+        let (tx1, rx1) = mpsc::channel(100);
+        let (tx2, rx2) = mpsc::channel(100);
         (MemoryStream::new(rx1, tx2), MemoryStream::new(rx2, tx1))
     }
 
+    #[allow(clippy::manual_async_fn)]
     impl TunnelStream for MemoryStream {
-        async fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Result<usize, TunnelError> {
-            if self.buffer.is_empty() {
-                match self.rx.recv().await {
-                    Some(data) => self.buffer = data,
-                    None => return Ok(0),
+        fn read<'a>(
+            &'a mut self,
+            buf: &'a mut [u8],
+        ) -> impl Future<Output = Result<usize, TunnelError>> + Send + 'a {
+            async move {
+                if self.buffer.is_empty() {
+                    self.buffer = self.rx.recv().await.ok_or(TunnelError::StreamClosed)?;
                 }
+                let n = std::cmp::min(buf.len(), self.buffer.len());
+                buf[..n].copy_from_slice(&self.buffer[..n]);
+                self.buffer.drain(..n);
+                Ok(n)
             }
-            let n = std::cmp::min(buf.len(), self.buffer.len());
-            buf[..n].copy_from_slice(&self.buffer[..n]);
-            self.buffer.drain(..n);
-            Ok(n)
         }
 
-        async fn write<'a>(&'a mut self, buf: &'a [u8]) -> Result<usize, TunnelError> {
-            self.tx
-                .send(buf.to_vec())
-                .await
-                .map_err(|_| TunnelError::StreamClosed)?;
-            Ok(buf.len())
+        fn write<'a>(
+            &'a mut self,
+            buf: &'a [u8],
+        ) -> impl Future<Output = Result<usize, TunnelError>> + Send + 'a {
+            async move {
+                self.tx
+                    .send(buf.to_vec())
+                    .await
+                    .map_err(|_| TunnelError::StreamClosed)?;
+                Ok(buf.len())
+            }
         }
 
-        async fn flush(&mut self) -> Result<(), TunnelError> {
-            Ok(())
+        fn flush(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send + '_ {
+            async move { Ok(()) }
         }
 
-        async fn close(&mut self) -> Result<(), TunnelError> {
-            Ok(())
+        fn close(&mut self) -> impl Future<Output = Result<(), TunnelError>> + Send + '_ {
+            async move { Ok(()) }
         }
     }
 }
@@ -110,8 +117,8 @@ mod tests {
     #[tokio::test]
     async fn test_memory_stream_bidirectional() {
         let (mut a, mut b) = create_stream_pair();
-        a.write(b"ping").await.unwrap();
-        b.write(b"pong").await.unwrap();
+        let _ = a.write(b"ping").await;
+        let _ = b.write(b"pong").await;
         let mut buf = vec![0u8; 64];
         let n = b.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"ping");

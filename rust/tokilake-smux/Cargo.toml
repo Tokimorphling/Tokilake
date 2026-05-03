@@ -2,7 +2,12 @@
 name = "tokilake-smux"
 version = "0.1.0"
 description = "Tokilake SMUX - Wire-compatible smux protocol, zero-overhead Rust implementation"
-edition = "2021"
+readme = "README.md"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "sync", "io-util", "time", "macros"] }

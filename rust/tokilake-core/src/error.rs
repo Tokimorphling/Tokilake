@@ -68,3 +68,15 @@ impl std::fmt::Display for ErrorMessage {
         }
     }
 }
+
+/// Helper trait to map errors to TunnelError.
+pub trait MapTunnelErr<T> {
+    /// Maps any error to TunnelError::StreamClosed.
+    fn map_stream_closed(self) -> Result<T, TunnelError>;
+}
+
+impl<T, E> MapTunnelErr<T> for Result<T, E> {
+    fn map_stream_closed(self) -> Result<T, TunnelError> {
+        self.map_err(|_| TunnelError::StreamClosed)
+    }
+}

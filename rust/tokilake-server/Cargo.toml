@@ -36,3 +36,8 @@ parking_lot = { workspace = true }
 
 # HTTP server
 axum = { workspace = true }
+
+# QUIC and TLS
+quinn = { workspace = true }
+rustls = { workspace = true }
+rcgen = { workspace = true }

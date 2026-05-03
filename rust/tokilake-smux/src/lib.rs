@@ -34,6 +34,6 @@ mod frame;
 mod session;
 mod stream;
 
-pub use frame::{Frame, HEADER_SIZE};
+pub use frame::{Frame, HEADER_SIZE, MAX_PAYLOAD_SIZE, VERSION_1, VERSION_2};
 pub use session::{Config, Session};
 pub use stream::Stream;

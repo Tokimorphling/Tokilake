@@ -7,16 +7,16 @@
 //! - Request cancellation
 //! - Error propagation
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
-
+use crate::{
+    error::{ErrorMessage, TunnelError},
+    protocol::{TunnelRequest, TunnelResponse},
+    service::Service,
+    session::{InFlightRequest, SessionManager},
+    tunnel::{TunnelSession, TunnelStream},
+};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
-
-use crate::error::{ErrorMessage, TunnelError};
-use crate::protocol::{TunnelRequest, TunnelResponse};
-use crate::session::{InFlightRequest, SessionManager};
 
 /// Error returned when a tunnel stream request fails.
 #[derive(Debug, Clone)]
@@ -68,9 +68,9 @@ impl TunnelStreamError {
 
         Self {
             status_code: 502,
-            code: code.to_string(),
-            message: message.to_string(),
-            error_type: "upstream_error".to_string(),
+            code:        code.to_string(),
+            message:     message.to_string(),
+            error_type:  "upstream_error".to_string(),
         }
     }
 }
@@ -94,130 +94,193 @@ pub struct TunnelRoundtripResponse {
 ///
 /// Manages the lifecycle of forwarded requests including stream setup,
 /// response pumping, and cancellation.
-pub struct Roundtrip {
-    session_manager: Arc<SessionManager>,
+#[derive(Clone)]
+pub struct Roundtrip<T: TunnelSession> {
+    session_manager: Arc<SessionManager<T>>,
 }
 
-impl Roundtrip {
+impl<T: TunnelSession> Roundtrip<T> {
     /// Create a new roundtrip handler.
-    pub fn new(session_manager: Arc<SessionManager>) -> Self {
+    pub fn new(session_manager: Arc<SessionManager<T>>) -> Self {
         Self { session_manager }
     }
+}
 
-    /// Forward a request to a worker by channel ID.
-    ///
-    /// Returns a streaming response receiver.
-    pub async fn do_request_by_channel(
-        &self,
+pub enum RoundtripRequest {
+    ByChannel {
         channel_id: i32,
-        mut request: TunnelRequest,
-    ) -> Result<TunnelRoundtripResponse, TunnelError> {
-        let session = self
-            .session_manager
-            .get_by_channel_id(channel_id)
-            .ok_or_else(|| {
-                TunnelError::protocol(format!(
-                    "tokiame session is offline for channel {}",
-                    channel_id
-                ))
-            })?;
+        request:    TunnelRequest,
+    },
+    ByNamespace {
+        namespace: Arc<str>,
+        request:   TunnelRequest,
+    },
+}
 
-        if !session.is_alive() {
-            return Err(TunnelError::protocol(format!(
-                "tokiame session is offline for channel {}",
-                channel_id
-            )));
-        }
+impl<T: TunnelSession> Service<RoundtripRequest> for Roundtrip<T> {
+    type Response = TunnelRoundtripResponse;
+    type Error = TunnelError;
 
-        self.do_request_with_session(&session, &mut request).await
-    }
+    async fn call(&self, req: RoundtripRequest) -> Result<Self::Response, Self::Error> {
+        let (session, mut request) = match req {
+            RoundtripRequest::ByChannel {
+                channel_id,
+                request,
+            } => {
+                let session = self
+                    .session_manager
+                    .get_by_channel_id(channel_id)
+                    .ok_or_else(|| {
+                        TunnelError::protocol(format!(
+                            "tokiame session is offline for channel {}",
+                            channel_id
+                        ))
+                    })?;
+                if !session.read().await.is_alive() {
+                    return Err(TunnelError::protocol(format!(
+                        "tokiame session is offline for channel {}",
+                        channel_id
+                    )));
+                }
+                (session, request)
+            }
+            RoundtripRequest::ByNamespace { namespace, request } => {
+                let session = self
+                    .session_manager
+                    .get_by_namespace(&namespace)
+                    .ok_or_else(|| {
+                        TunnelError::protocol(format!(
+                            "tokiame session is offline for namespace {}",
+                            namespace
+                        ))
+                    })?;
+                if !session.read().await.is_alive() {
+                    return Err(TunnelError::protocol(format!(
+                        "tokiame session is offline for namespace {}",
+                        namespace
+                    )));
+                }
+                (session, request)
+            }
+        };
 
-    /// Forward a request to a worker by namespace.
-    pub async fn do_request_by_namespace(
-        &self,
-        namespace: &str,
-        mut request: TunnelRequest,
-    ) -> Result<TunnelRoundtripResponse, TunnelError> {
-        let session = self
-            .session_manager
-            .get_by_namespace(namespace)
-            .ok_or_else(|| {
-                TunnelError::protocol(format!(
-                    "tokiame session is offline for namespace {}",
-                    namespace
-                ))
-            })?;
+        let session_guard = session.read().await;
+        let (namespace, channel_id) = if let Some(ref info) = session_guard.worker_info {
+            (info.namespace.clone(), info.channel_id)
+        } else {
+            return Err(TunnelError::protocol("session is not fully registered"));
+        };
 
-        if !session.is_alive() {
-            return Err(TunnelError::protocol(format!(
-                "tokiame session is offline for namespace {}",
-                namespace
-            )));
-        }
-
-        self.do_request_with_session(&session, &mut request).await
-    }
-
-    /// Forward a request using an existing session.
-    async fn do_request_with_session(
-        &self,
-        session: &crate::session::GatewaySession,
-        request: &mut TunnelRequest,
-    ) -> Result<TunnelRoundtripResponse, TunnelError> {
         // Ensure request has an ID
         if request.request_id.trim().is_empty() {
-            request.request_id = build_request_id(&session.namespace);
+            request.request_id = build_request_id(&namespace);
         }
 
-        // Open a stream for this request
-        let mut stream = session.open_stream().await?;
+        // Open a stream for this request.
+        let tunnel_session = session_guard
+            .tunnel_session
+            .clone()
+            .ok_or(TunnelError::StreamClosed)?;
+        let mut stream = {
+            let mut session_lock = tunnel_session.lock().await;
+            session_lock.open_stream().await?
+        };
 
         // Track the in-flight request
         let (cancel_tx, cancel_rx) = oneshot::channel();
-        let request_id = request.request_id.clone();
+        let request_id: Arc<str> = request.request_id.as_str().into();
 
         self.session_manager.track_request(InFlightRequest {
             request_id: request_id.clone(),
-            session_id: session.id,
-            namespace: session.namespace.clone(),
-            channel_id: session.channel_id,
+            session_id: session_guard.id,
+            namespace: namespace.as_str().into(),
+            channel_id,
             created_at: Instant::now(),
         });
 
         // Write the request
-        let request_json = serde_json::to_vec(request)?;
+        let request_json = serde_json::to_vec(&request)?;
         stream.write(&request_json).await?;
         stream.flush().await?;
+
+        // Read the first frame for headers
+        let mut buf = vec![0u8; 8192];
+        let mut response_buffer = Vec::new();
+        let first_response = loop {
+            let n = stream.read(&mut buf).await?;
+            if n == 0 {
+                return Err(TunnelError::protocol(
+                    "stream closed before receiving response",
+                ));
+            }
+
+            response_buffer.extend_from_slice(&buf[..n]);
+
+            if let Some(newline_pos) = response_buffer.iter().position(|&b| b == b'\n') {
+                let line = response_buffer[..newline_pos].to_vec();
+                response_buffer.drain(..=newline_pos);
+
+                if line.is_empty() {
+                    continue;
+                }
+
+                match serde_json::from_slice::<TunnelResponse>(&line) {
+                    Ok(resp) => break resp,
+                    Err(e) => return Err(TunnelError::Serialization(e)),
+                }
+            }
+        };
+
+        if let Some(err) = &first_response.error {
+            return Err(TunnelError::protocol(err.message.clone()));
+        }
+
+        let status_code = first_response.status_code;
+        let headers = first_response.headers.clone();
 
         // Set up response channel
         let (body_tx, body_rx) = mpsc::channel(32);
 
+        // If the first response has a body chunk, send it
+        if !first_response.body_chunk.is_empty() {
+            let _ = body_tx.send(Ok(first_response.body_chunk.0)).await;
+        }
+
         // Spawn response pump
-        let session_id = session.id;
-        let request_id_clone = request_id.clone();
         let session_manager = self.session_manager.clone();
 
-        tokio::spawn(async move {
-            let result =
-                pump_response(stream, body_tx, cancel_rx, session_id, &request_id_clone).await;
+        // Only spawn pump if not EOF
+        if !first_response.eof {
+            tokio::spawn(async move {
+                let result = pump_response(
+                    stream,
+                    body_tx,
+                    cancel_rx,
+                    request_id.clone(),
+                    response_buffer,
+                )
+                .await;
 
-            session_manager.remove_request(&request_id_clone);
+                session_manager.remove_request(&request_id);
 
-            if let Err(e) = result {
-                tracing::error!("tunnel response pump error: {}", e);
-            }
-        });
+                if let Err(e) = result {
+                    tracing::error!("tunnel response pump error: {}", e);
+                }
+            });
+        } else {
+            self.session_manager.remove_request(&request_id);
+        }
 
-        // Read the first frame for headers
-        // This is simplified - in reality you'd read from the stream
         Ok(TunnelRoundtripResponse {
-            status_code: 200,
-            headers: HashMap::new(),
+            status_code: if status_code == 0 { 200 } else { status_code },
+            headers,
             body_rx,
             cancel_tx: Some(cancel_tx),
         })
     }
+}
 
+impl<T: TunnelSession> Roundtrip<T> {
     /// Cancel an in-flight request.
     pub fn cancel_request(&self, request_id: &str, _reason: &str) -> Result<(), TunnelError> {
         if let Some(_entry) = self.session_manager.get_request(request_id) {
@@ -231,20 +294,23 @@ impl Roundtrip {
 /// Build a unique request ID for a tunnel request.
 fn build_request_id(namespace: &str) -> String {
     let namespace = namespace.trim();
-    let namespace = if namespace.is_empty() { "tokiame" } else { namespace };
+    let namespace = if namespace.is_empty() {
+        "tokiame"
+    } else {
+        namespace
+    };
     format!("{}:relay:{}", namespace, Uuid::new_v4())
 }
 
 /// Pump response frames from the tunnel stream to the response channel.
-async fn pump_response(
-    mut stream: Box<dyn crate::tunnel::TunnelStream>,
+async fn pump_response<S: TunnelStream>(
+    mut stream: S,
     body_tx: mpsc::Sender<Result<Vec<u8>, TunnelStreamError>>,
     cancel_rx: oneshot::Receiver<String>,
-    _session_id: u64,
-    request_id: &str,
+    request_id: Arc<str>,
+    mut response_buffer: Vec<u8>,
 ) -> Result<(), TunnelError> {
     let mut buf = vec![0u8; 8192];
-    let mut response_buffer = Vec::new();
 
     tokio::select! {
         _ = async {
@@ -273,7 +339,7 @@ async fn pump_response(
                             }
 
                             if !response.body_chunk.is_empty()
-                                && body_tx.send(Ok(response.body_chunk)).await.is_err()
+                                && body_tx.send(Ok(response.body_chunk.0)).await.is_err()
                             {
                                 return Ok(());
                             }

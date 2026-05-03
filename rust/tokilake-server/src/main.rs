@@ -14,19 +14,18 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokilake_core::{
     error::{ErrorMessage, TunnelError},
     protocol::*,
-    session::{GatewaySession, InFlightRequest, SessionManager},
+    session::{ChannelBindParams, GatewaySession, InFlightRequest, SessionManager},
+    tunnel::{quic::QuicSession, TunnelSession},
 };
-use tokio::{
-    io::AsyncWriteExt,
-    sync::{mpsc, RwLock},
-};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
 
 #[derive(Clone)]
 struct AppState {
-    token:           String,
-    session_manager: Arc<SessionManager>,
-    registry:        Arc<MemoryWorkerRegistry>,
+    token:                String,
+    session_manager:      Arc<SessionManager<tokilake_smux::Session>>,
+    quic_session_manager: Arc<SessionManager<QuicSession>>,
+    registry:             Arc<MemoryWorkerRegistry>,
 }
 
 struct MemoryWorkerRegistry {
@@ -34,9 +33,15 @@ struct MemoryWorkerRegistry {
 }
 
 struct WorkerEntry {
+    #[allow(dead_code)]
     worker_id: i32,
+    #[allow(dead_code)]
     namespace: String,
     models:    Vec<String>,
+    #[allow(dead_code)]
+    group:     String,
+    #[allow(dead_code)]
+    status:    String,
 }
 
 impl MemoryWorkerRegistry {
@@ -63,6 +68,8 @@ impl MemoryWorkerRegistry {
             worker_id,
             namespace: namespace.to_string(),
             models: models.to_vec(),
+            group: group.to_string(),
+            status: backend_type.to_string(),
         });
 
         info!(
@@ -157,7 +164,7 @@ impl tokio::io::AsyncRead for WebSocketStream {
 
 impl tokio::io::AsyncWrite for WebSocketStream {
     fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
@@ -191,6 +198,19 @@ impl tokio::io::AsyncWrite for WebSocketStream {
     }
 }
 
+/// Generate a self-signed TLS certificate for the QUIC endpoint.
+fn generate_self_signed_cert() -> (
+    rustls::pki_types::CertificateDer<'static>,
+    rustls::pki_types::PrivateKeyDer<'static>,
+) {
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_der = rustls::pki_types::CertificateDer::from(cert.cert);
+    let key_der = rustls::pki_types::PrivateKeyDer::from(
+        rustls::pki_types::PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()),
+    );
+    (cert_der, key_der)
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -205,12 +225,14 @@ async fn main() {
         .and_then(|i| std::env::args().nth(i + 1))
         .unwrap_or_else(|| "sk-test-token".to_string());
 
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = Arc::new(SessionManager::<tokilake_smux::Session>::new());
+    let quic_session_manager = Arc::new(SessionManager::<QuicSession>::new());
     let registry = Arc::new(MemoryWorkerRegistry::new());
 
     let state = AppState {
         token,
         session_manager,
+        quic_session_manager,
         registry,
     };
 
@@ -219,12 +241,21 @@ async fn main() {
         .route("/api/tokilake/connect", get(ws_handler))
         .route("/health", get(health_handler))
         .route("/v1/chat/completions", post(chat_completions_handler))
-        .with_state(state);
+        .with_state(state.clone());
 
     let bind_addr = addr.trim_start_matches(':');
     let bind_addr = format!("0.0.0.0:{}", bind_addr);
 
     info!("tokilake server listening on {}", addr);
+
+    // Spawn the QUIC listener
+    let quic_state = state.clone();
+    let quic_bind = bind_addr.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_quic_listener(&quic_bind, quic_state).await {
+            warn!("QUIC listener failed: {}", e);
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await.unwrap();
     axum::serve(
@@ -244,7 +275,8 @@ struct HealthResponse {
 async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status:   "ok".to_string(),
-        sessions: state.session_manager.session_count(),
+        sessions: state.session_manager.session_count()
+            + state.quic_session_manager.session_count(),
     })
 }
 
@@ -339,7 +371,10 @@ async fn handle_ws_connection(
 
     // Cleanup
     let session_guard = session.read().await;
-    let worker_id = session_guard.worker_id;
+    let worker_id = session_guard
+        .worker_info
+        .as_ref()
+        .map_or(0, |i| i.worker_id);
     let _ = state.registry.cleanup_worker(worker_id);
     state.session_manager.release(&session_guard).await;
     drop(session_guard);
@@ -347,7 +382,7 @@ async fn handle_ws_connection(
 
 async fn serve_session(
     state: &AppState,
-    session: &Arc<RwLock<GatewaySession>>,
+    session: &Arc<RwLock<GatewaySession<tokilake_smux::Session>>>,
     socket: WebSocket,
 ) -> Result<(), TunnelError> {
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -359,7 +394,7 @@ async fn serve_session(
     // Spawn task to forward outgoing WebSocket messages
     tokio::spawn(async move {
         while let Some(data) = ws_out_rx.recv().await {
-            if ws_sender.send(Message::Binary(data)).await.is_err() {
+            if ws_sender.send(Message::Binary(data.into())).await.is_err() {
                 break;
             }
         }
@@ -371,7 +406,7 @@ async fn serve_session(
         while let Some(msg) = ws_receiver.next().await {
             match msg {
                 Ok(Message::Binary(data)) => {
-                    if ws_in_tx_clone.send(data).await.is_err() {
+                    if ws_in_tx_clone.send(data.into()).await.is_err() {
                         break;
                     }
                 }
@@ -399,7 +434,7 @@ async fn serve_session(
     {
         let mut s = session.write().await;
         s.control_tx = Some(ws_out_tx.clone());
-        s.smux_session = Some(smux_session.clone());
+        s.tunnel_session = Some(smux_session.clone());
         // Mark as authenticated since WebSocket auth is done at the HTTP level
         s.authenticated = true;
     }
@@ -463,12 +498,16 @@ async fn serve_session(
             };
 
             let response = handle_control_message(
-                state,
-                session,
+                ControlMessageContext {
+                    token: &state.token,
+                    registry: &state.registry,
+                    session_manager: &state.session_manager,
+                    session,
+                    authenticated: &mut authenticated,
+                    worker_registered: &mut worker_registered,
+                    worker_id: &mut worker_id,
+                },
                 &msg,
-                &mut authenticated,
-                &mut worker_registered,
-                &mut worker_id,
             )
             .await;
 
@@ -486,19 +525,25 @@ async fn serve_session(
     Ok(())
 }
 
-async fn handle_control_message(
-    state: &AppState,
-    session: &Arc<RwLock<GatewaySession>>,
+struct ControlMessageContext<'a, T: TunnelSession> {
+    pub token:             &'a str,
+    pub registry:          &'a MemoryWorkerRegistry,
+    pub session_manager:   &'a SessionManager<T>,
+    pub session:           &'a Arc<RwLock<GatewaySession<T>>>,
+    pub authenticated:     &'a mut bool,
+    pub worker_registered: &'a mut bool,
+    pub worker_id:         &'a mut i32,
+}
+
+async fn handle_control_message<T: TunnelSession>(
+    ctx: ControlMessageContext<'_, T>,
     msg: &ControlMessage,
-    authenticated: &mut bool,
-    worker_registered: &mut bool,
-    worker_id: &mut i32,
 ) -> Option<ControlMessage> {
     let request_id = msg.request_id.clone().unwrap_or_default();
 
     match msg.msg_type.as_str() {
         control_type::AUTH => {
-            if *authenticated {
+            if *ctx.authenticated {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("auth_already_completed", "auth message already handled"),
@@ -515,19 +560,19 @@ async fn handle_control_message(
                 }
             };
 
-            let token = auth.token.trim();
-            let token = token.strip_prefix("sk-").unwrap_or(token);
-            let expected = state.token.strip_prefix("sk-").unwrap_or(&state.token);
+            let auth_token = auth.token.trim();
+            let auth_token = auth_token.strip_prefix("sk-").unwrap_or(auth_token);
+            let expected = ctx.token.strip_prefix("sk-").unwrap_or(ctx.token);
 
-            if token != expected {
+            if auth_token != expected {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("auth_failed", "invalid token"),
                 ));
             }
 
-            *authenticated = true;
-            session.write().await.authenticated = true;
+            *ctx.authenticated = true;
+            ctx.session.write().await.authenticated = true;
 
             Some(ControlMessage::ack(request_id, AckMessage {
                 message:    "auth_ok".to_string(),
@@ -538,14 +583,14 @@ async fn handle_control_message(
         }
 
         control_type::REGISTER => {
-            if !*authenticated {
+            if !*ctx.authenticated {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_authenticated", "authentication is required"),
                 ));
             }
 
-            if *worker_registered {
+            if *ctx.worker_registered {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new(
@@ -568,30 +613,31 @@ async fn handle_control_message(
                 }
             };
 
-            match state.registry.register_worker(
+            match ctx.registry.register_worker(
                 &register.namespace,
                 &register.models,
                 &register.group,
                 &register.backend_type,
             ) {
                 Ok(result) => {
-                    *worker_registered = true;
-                    *worker_id = result.worker_id;
+                    *ctx.worker_registered = true;
+                    *ctx.worker_id = result.worker_id;
 
-                    {
-                        let mut s = session.write().await;
-                        s.worker_id = result.worker_id;
-                        s.channel_id = result.channel_id;
-                        s.namespace = result.namespace.clone();
-                        s.group = result.group.clone();
-                        s.models = result.models.clone();
-                        s.backend_type = result.backend_type.clone();
-                        s.status = result.status;
-                    }
+                    ctx.session_manager
+                        .bind_channel(ctx.session, ChannelBindParams {
+                            worker_id:    result.worker_id,
+                            channel_id:   result.channel_id,
+                            group:        result.group.clone(),
+                            models:       result.models.clone(),
+                            backend_type: result.backend_type.clone(),
+                            status:       result.status,
+                            namespace:    result.namespace.clone(),
+                        })
+                        .await;
 
-                    let _ = state
+                    let _ = ctx
                         .session_manager
-                        .claim_namespace(session, &result.namespace)
+                        .claim_namespace(ctx.session, &result.namespace)
                         .await;
 
                     info!(
@@ -614,14 +660,14 @@ async fn handle_control_message(
         }
 
         control_type::HEARTBEAT => {
-            if !*authenticated {
+            if !*ctx.authenticated {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_authenticated", "authentication is required"),
                 ));
             }
 
-            if !*worker_registered {
+            if !*ctx.worker_registered {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_registered", "register is required before heartbeat"),
@@ -641,28 +687,31 @@ async fn handle_control_message(
                 }
             };
 
-            let _ = state
+            let _ = ctx
                 .registry
-                .update_heartbeat(*worker_id, &heartbeat.current_models);
+                .update_heartbeat(*ctx.worker_id, &heartbeat.current_models);
 
-            let s = session.read().await;
+            let s = ctx.session.read().await;
             Some(ControlMessage::ack(request_id, AckMessage {
                 message:    "heartbeat_ok".to_string(),
-                namespace:  s.namespace.clone(),
-                worker_id:  s.worker_id,
-                channel_id: s.channel_id,
+                namespace:  s
+                    .worker_info
+                    .as_ref()
+                    .map_or(String::new(), |i| i.namespace.clone()),
+                worker_id:  s.worker_info.as_ref().map_or(0, |i| i.worker_id),
+                channel_id: s.worker_info.as_ref().map_or(0, |i| i.channel_id),
             }))
         }
 
         control_type::MODELS_SYNC => {
-            if !*authenticated {
+            if !*ctx.authenticated {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_authenticated", "authentication is required"),
                 ));
             }
 
-            if !*worker_registered {
+            if !*ctx.worker_registered {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_registered", "register is required before models_sync"),
@@ -682,12 +731,15 @@ async fn handle_control_message(
                 }
             };
 
-            let s = session.read().await;
+            let s = ctx.session.read().await;
             Some(ControlMessage::ack(request_id, AckMessage {
                 message:    "models_sync_ok".to_string(),
-                namespace:  s.namespace.clone(),
-                worker_id:  s.worker_id,
-                channel_id: s.channel_id,
+                namespace:  s
+                    .worker_info
+                    .as_ref()
+                    .map_or(String::new(), |i| i.namespace.clone()),
+                worker_id:  s.worker_info.as_ref().map_or(0, |i| i.worker_id),
+                channel_id: s.worker_info.as_ref().map_or(0, |i| i.channel_id),
             }))
         }
 
@@ -701,7 +753,7 @@ async fn handle_control_message(
         }
 
         _ => {
-            if !*authenticated {
+            if !*ctx.authenticated {
                 return Some(ControlMessage::error_msg(
                     request_id,
                     ErrorMessage::new("not_authenticated", "authentication is required"),
@@ -730,8 +782,50 @@ async fn chat_completions_handler(
 ) -> impl IntoResponse {
     let namespace = query.namespace.unwrap_or_else(|| "test-worker".to_string());
 
-    let session = match state.session_manager.get_by_namespace(&namespace) {
-        Some(s) => s,
+    // Try SMUX session first, then QUIC
+    enum ResolvedSession {
+        Smux {
+            tunnel:     Arc<tokio::sync::Mutex<tokilake_smux::Session>>,
+            session_id: u64,
+            channel_id: i32,
+            mgr:        Arc<SessionManager<tokilake_smux::Session>>,
+        },
+        Quic {
+            tunnel:     Arc<tokio::sync::Mutex<QuicSession>>,
+            session_id: u64,
+            channel_id: i32,
+            mgr:        Arc<SessionManager<QuicSession>>,
+        },
+    }
+
+    let resolved = if let Some(session) = state.session_manager.get_by_namespace(&namespace) {
+        let g = session.read().await;
+        match &g.tunnel_session {
+            Some(s) => Some(ResolvedSession::Smux {
+                tunnel:     s.clone(),
+                session_id: g.id,
+                channel_id: g.worker_info.as_ref().map_or(0, |i| i.channel_id),
+                mgr:        state.session_manager.clone(),
+            }),
+            None => None,
+        }
+    } else if let Some(session) = state.quic_session_manager.get_by_namespace(&namespace) {
+        let g = session.read().await;
+        match &g.tunnel_session {
+            Some(s) => Some(ResolvedSession::Quic {
+                tunnel:     s.clone(),
+                session_id: g.id,
+                channel_id: g.worker_info.as_ref().map_or(0, |i| i.channel_id),
+                mgr:        state.quic_session_manager.clone(),
+            }),
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    let resolved = match resolved {
+        Some(r) => r,
         None => {
             return (
                 StatusCode::BAD_GATEWAY,
@@ -741,20 +835,19 @@ async fn chat_completions_handler(
         }
     };
 
-    let session_guard = session.read().await;
-    let smux_session = match &session_guard.smux_session {
-        Some(s) => s.clone(),
-        None => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": "smux session unavailable"})),
-            )
-                .into_response();
-        }
+    // Extract common fields and open data stream based on transport type
+    let (session_id, channel_id) = match &resolved {
+        ResolvedSession::Smux {
+            session_id,
+            channel_id,
+            ..
+        } => (*session_id, *channel_id),
+        ResolvedSession::Quic {
+            session_id,
+            channel_id,
+            ..
+        } => (*session_id, *channel_id),
     };
-    let session_id = session_guard.id;
-    let channel_id = session_guard.channel_id;
-    drop(session_guard);
 
     let model = body
         .get("model")
@@ -784,53 +877,121 @@ async fn chat_completions_handler(
         body: serde_json::to_vec(&body).unwrap_or_default(),
     };
 
-    state.session_manager.track_request(InFlightRequest {
-        request_id: request_id.clone(),
-        session_id,
-        namespace: namespace.clone(),
-        channel_id,
-        created_at: std::time::Instant::now(),
-    });
-
-    // Open a data stream to the worker
-    let mut data_stream = {
-        let mut smux = smux_session.lock().await;
-        match smux.open().await {
-            Some(stream) => stream,
-            None => {
-                state.session_manager.remove_request(&request_id);
-                return (
-                    StatusCode::BAD_GATEWAY,
-                    Json(serde_json::json!({"error": "failed to open data stream"})),
-                )
-                    .into_response();
-            }
+    // Track the request — use the appropriate manager
+    match &resolved {
+        ResolvedSession::Smux { mgr, .. } => {
+            mgr.track_request(InFlightRequest {
+                request_id: request_id.as_str().into(),
+                session_id,
+                namespace: namespace.as_str().into(),
+                channel_id,
+                created_at: std::time::Instant::now(),
+            });
         }
-    };
+        ResolvedSession::Quic { mgr, .. } => {
+            mgr.track_request(InFlightRequest {
+                request_id: request_id.as_str().into(),
+                session_id,
+                namespace: namespace.as_str().into(),
+                channel_id,
+                created_at: std::time::Instant::now(),
+            });
+        }
+    }
 
-    // Send tunnel request on data stream
+    // Serialize the tunnel request
     let req_data = serde_json::to_vec(&tunnel_req).unwrap();
     let mut req_with_newline = req_data;
     req_with_newline.push(b'\n');
-    if let Err(e) = data_stream.write_all(&req_with_newline).await {
-        state.session_manager.remove_request(&request_id);
-        return (
-            StatusCode::BAD_GATEWAY,
-            Json(serde_json::json!({"error": format!("failed to send request: {}", e)})),
-        )
-            .into_response();
-    }
 
-    // Read response from data stream
-    let mut response_codec =
-        tokilake_core::codec::TunnelCodec::new(data_stream, tokio::io::sink());
+    // Open a data stream and send the request, then read the response
+    match resolved {
+        ResolvedSession::Smux { tunnel, mgr, .. } => {
+            let mut data_stream = {
+                let mut smux = tunnel.lock().await;
+                match smux.open().await {
+                    Some(stream) => stream,
+                    None => {
+                        mgr.remove_request(&request_id);
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            Json(serde_json::json!({"error": "failed to open data stream"})),
+                        )
+                            .into_response();
+                    }
+                }
+            };
+
+            if let Err(e) = data_stream.write_all(&req_with_newline).await {
+                mgr.remove_request(&request_id);
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({"error": format!("failed to send request: {}", e)})),
+                )
+                    .into_response();
+            }
+
+            relay_response(data_stream, tokio::io::sink(), &request_id, &*mgr).await
+        }
+        ResolvedSession::Quic { tunnel, mgr, .. } => {
+            let (send, recv) = {
+                let conn = {
+                    let q = tunnel.lock().await;
+                    // Access the underlying quinn::Connection via a helper
+                    q.connection().clone()
+                };
+                match conn.open_bi().await {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        mgr.remove_request(&request_id);
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            Json(serde_json::json!({"error": format!("failed to open QUIC stream: {}", e)})),
+                        )
+                            .into_response();
+                    }
+                }
+            };
+
+            let mut send = send;
+
+            if let Err(e) = send.write_all(&req_with_newline).await {
+                mgr.remove_request(&request_id);
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(
+                        serde_json::json!({"error": format!("failed to send QUIC request: {}", e)}),
+                    ),
+                )
+                    .into_response();
+            }
+
+            relay_response(recv, send, &request_id, &*mgr).await
+        }
+    }
+}
+
+/// Common response relay logic — reads the tunnel response from a reader and
+/// builds the HTTP response. Works for both SMUX streams and QUIC streams.
+async fn relay_response<R, W, T>(
+    reader: R,
+    writer: W,
+    request_id: &str,
+    session_manager: &SessionManager<T>,
+) -> axum::response::Response
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+    T: TunnelSession,
+{
+    let mut response_codec = tokilake_core::codec::TunnelCodec::new(reader, writer);
 
     // Read first response frame
     let first_frame =
         match tokio::time::timeout(Duration::from_secs(30), response_codec.read_response()).await {
             Ok(Ok(Some(resp))) => resp,
             Ok(Ok(None)) => {
-                state.session_manager.remove_request(&request_id);
+                session_manager.remove_request(request_id);
                 return (
                     StatusCode::BAD_GATEWAY,
                     Json(serde_json::json!({"error": "stream closed before response"})),
@@ -838,7 +999,7 @@ async fn chat_completions_handler(
                     .into_response();
             }
             Ok(Err(e)) => {
-                state.session_manager.remove_request(&request_id);
+                session_manager.remove_request(request_id);
                 return (
                     StatusCode::BAD_GATEWAY,
                     Json(serde_json::json!({"error": format!("failed to read response: {}", e)})),
@@ -846,7 +1007,7 @@ async fn chat_completions_handler(
                     .into_response();
             }
             Err(_) => {
-                state.session_manager.remove_request(&request_id);
+                session_manager.remove_request(request_id);
                 return (
                     StatusCode::BAD_GATEWAY,
                     Json(serde_json::json!({"error": "request timeout"})),
@@ -857,7 +1018,7 @@ async fn chat_completions_handler(
 
     // Check for errors
     if let Some(err) = &first_frame.error {
-        state.session_manager.remove_request(&request_id);
+        session_manager.remove_request(request_id);
         return (
             StatusCode::BAD_GATEWAY,
             Json(serde_json::json!({"error": err.message})),
@@ -880,7 +1041,7 @@ async fn chat_completions_handler(
             {
                 Ok(Ok(Some(frame))) => {
                     if let Some(err) = &frame.error {
-                        state.session_manager.remove_request(&request_id);
+                        session_manager.remove_request(request_id);
                         return (
                             StatusCode::BAD_GATEWAY,
                             Json(serde_json::json!({"error": err.message})),
@@ -894,7 +1055,7 @@ async fn chat_completions_handler(
                 }
                 Ok(Ok(None)) => break,
                 Ok(Err(e)) => {
-                    state.session_manager.remove_request(&request_id);
+                    session_manager.remove_request(request_id);
                     return (
                         StatusCode::BAD_GATEWAY,
                         Json(serde_json::json!({"error": format!("read response: {}", e)})),
@@ -902,7 +1063,7 @@ async fn chat_completions_handler(
                         .into_response();
                 }
                 Err(_) => {
-                    state.session_manager.remove_request(&request_id);
+                    session_manager.remove_request(request_id);
                     return (
                         StatusCode::BAD_GATEWAY,
                         Json(serde_json::json!({"error": "request timeout"})),
@@ -913,7 +1074,7 @@ async fn chat_completions_handler(
         }
     }
 
-    state.session_manager.remove_request(&request_id);
+    session_manager.remove_request(request_id);
 
     // Build response
     let mut headers = axum::http::HeaderMap::new();
@@ -929,4 +1090,148 @@ async fn chat_completions_handler(
     let mut response = (headers, body).into_response();
     *response.status_mut() = status_code;
     response
+}
+
+// --------------------------------------------------------------------------
+// QUIC listener
+// --------------------------------------------------------------------------
+
+async fn run_quic_listener(bind_addr: &str, state: AppState) -> Result<(), anyhow::Error> {
+    let (cert_der, key_der) = generate_self_signed_cert();
+
+    let server_crypto = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert_der], key_der)?;
+
+    let server_config = quinn::ServerConfig::with_crypto(Arc::new(
+        quinn::crypto::rustls::QuicServerConfig::try_from(server_crypto)?,
+    ));
+
+    let endpoint = quinn::Endpoint::server(server_config, bind_addr.parse()?)?;
+    info!("QUIC listener started on {}", bind_addr);
+
+    while let Some(incoming) = endpoint.accept().await {
+        let state = state.clone();
+        tokio::spawn(async move {
+            match incoming.await {
+                Ok(conn) => {
+                    let remote = conn.remote_address();
+                    info!("QUIC connection from {}", remote);
+                    handle_quic_connection(conn, state, remote.to_string()).await;
+                }
+                Err(e) => {
+                    warn!("QUIC accept error: {}", e);
+                }
+            }
+        });
+    }
+
+    Ok(())
+}
+
+async fn handle_quic_connection(conn: quinn::Connection, state: AppState, remote_addr: String) {
+    let quic_session = QuicSession::new(conn.clone());
+    let quic_session = Arc::new(tokio::sync::Mutex::new(quic_session));
+
+    let session = state.quic_session_manager.new_session(
+        None,
+        String::new(), // QUIC doesn't pass token via HTTP headers
+        remote_addr.clone(),
+        "quic".to_string(),
+    );
+
+    // Store the QUIC session
+    {
+        let mut s = session.write().await;
+        s.tunnel_session = Some(quic_session.clone());
+    }
+
+    // Accept the first bidirectional stream as the control stream
+    let (mut send, mut recv) = match conn.accept_bi().await {
+        Ok(pair) => pair,
+        Err(e) => {
+            warn!("QUIC: failed to accept control stream: {}", e);
+            let session_guard = session.read().await;
+            state.quic_session_manager.release(&session_guard).await;
+            return;
+        }
+    };
+
+    let mut authenticated = false;
+    let mut worker_registered = false;
+    let mut worker_id = 0i32;
+
+    // Control message loop
+    let mut control_buf = Vec::new();
+    loop {
+        let mut read_buf = vec![0u8; 4096];
+        let n = match recv.read(&mut read_buf).await {
+            Ok(Some(n)) => n,
+            Ok(None) => {
+                info!("QUIC control stream closed");
+                break;
+            }
+            Err(e) => {
+                warn!("QUIC control stream error: {}", e);
+                break;
+            }
+        };
+        control_buf.extend_from_slice(&read_buf[..n]);
+
+        while let Some(pos) = control_buf.iter().position(|&b| b == b'\n') {
+            let line = control_buf[..pos].to_vec();
+            control_buf.drain(..=pos);
+
+            let trimmed = String::from_utf8_lossy(&line);
+            let trimmed = trimmed.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let msg = match serde_json::from_str::<ControlMessage>(trimmed) {
+                Ok(m) => {
+                    info!("QUIC control message: type={}", m.msg_type);
+                    m
+                }
+                Err(e) => {
+                    warn!("QUIC control message parse error: {}", e);
+                    continue;
+                }
+            };
+
+            let response = handle_control_message(
+                ControlMessageContext {
+                    token:             &state.token,
+                    registry:          &state.registry,
+                    session_manager:   &state.quic_session_manager,
+                    session:           &session,
+                    authenticated:     &mut authenticated,
+                    worker_registered: &mut worker_registered,
+                    worker_id:         &mut worker_id,
+                },
+                &msg,
+            )
+            .await;
+
+            if let Some(resp) = response {
+                let resp_data = serde_json::to_vec(&resp).unwrap();
+                let mut resp_with_newline = resp_data;
+                resp_with_newline.push(b'\n');
+                if send.write_all(&resp_with_newline).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Cleanup
+    let session_guard = session.read().await;
+    let wid = session_guard
+        .worker_info
+        .as_ref()
+        .map_or(0, |i| i.worker_id);
+    let _ = state.registry.cleanup_worker(wid);
+    state.quic_session_manager.release(&session_guard).await;
+    drop(session_guard);
+    info!("QUIC worker disconnected: addr={}", remote_addr);
 }

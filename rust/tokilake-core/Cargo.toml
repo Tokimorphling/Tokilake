@@ -2,7 +2,12 @@
 name = "tokilake-core"
 version = "0.1.0"
 description = "Tokilake Core - High-performance tunnel gateway core library"
-edition = "2021"
+readme = "README.md"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 # Async runtime
@@ -31,3 +36,6 @@ dashmap = { workspace = true }
 
 # Stream multiplexing
 tokilake-smux = { workspace = true }
+
+# QUIC
+quinn = { workspace = true }

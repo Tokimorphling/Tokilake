@@ -78,8 +78,6 @@ pub struct Session {
     shared:         Arc<Shared>,
     /// Next stream ID for open().
     next_stream_id: u32,
-    /// Config version.
-    version:        u8,
 }
 
 impl Session {
@@ -147,7 +145,6 @@ impl Session {
             write_tx,
             shared,
             next_stream_id,
-            version,
         }
     }
 
