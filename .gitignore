@@ -38,3 +38,4 @@ __pycache__/
 /deploy/.env.compose.letsencrypt
 
 docs/dev
+thirdparties

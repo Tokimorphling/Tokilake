@@ -1,0 +1,38 @@
+[package]
+name = "tokilake-server"
+version = "0.1.0"
+description = "Tokilake Server - High-performance tunnel gateway server"
+edition = "2021"
+
+[[bin]]
+name = "tokilake-server"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+tokilake-core = { workspace = true }
+tokilake-smux = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+futures-util = { workspace = true }
+
+# Sync primitives
+parking_lot = { workspace = true }
+
+# HTTP server
+axum = { workspace = true }

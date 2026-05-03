@@ -1,0 +1,33 @@
+[package]
+name = "tokilake-core"
+version = "0.1.0"
+description = "Tokilake Core - High-performance tunnel gateway core library"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_bytes = "0.11"
+base64 = "0.22"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+uuid = { workspace = true }
+
+# Sync primitives
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+
+# Stream multiplexing
+tokilake-smux = { workspace = true }
