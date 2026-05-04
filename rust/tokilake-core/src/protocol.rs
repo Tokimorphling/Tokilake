@@ -1,5 +1,5 @@
 use crate::error::ErrorMessage;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use std::collections::HashMap;
 
 /// Body chunk that can be either a base64 string (from Go) or a byte array.

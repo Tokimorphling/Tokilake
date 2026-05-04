@@ -12,14 +12,14 @@
 //! - Built-in zero-overhead KeepAlive
 
 use crate::{
-    frame::{Frame, CMD_FIN, CMD_NOP, CMD_PSH, CMD_SYN, CMD_UPD, HEADER_SIZE},
+    frame::{CMD_FIN, CMD_NOP, CMD_PSH, CMD_SYN, CMD_UPD, Frame, HEADER_SIZE},
     stream::Stream,
 };
 use bytes::Bytes;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, Mutex, Notify},
+    sync::{Mutex, Notify, mpsc},
 };
 
 /// Default accept backlog.
@@ -67,7 +67,11 @@ pub(crate) enum WriteRequest {
     /// Send FIN frame (stream close).
     Fin { stream_id: u32 },
     /// Send UPD frame (window update).
-    Upd { stream_id: u32, consumed: u32, window: u32 },
+    Upd {
+        stream_id: u32,
+        consumed:  u32,
+        window:    u32,
+    },
 }
 
 pub(crate) struct StreamShared {
@@ -97,17 +101,17 @@ pub(crate) struct Shared {
 /// A multiplexed session over an underlying transport.
 pub struct Session {
     /// Accept incoming streams.
-    accept_rx:      mpsc::Receiver<Stream>,
+    accept_rx:         mpsc::Receiver<Stream>,
     /// Control frame sender (high priority).
-    ctrl_tx:        mpsc::Sender<WriteRequest>,
+    ctrl_tx:           mpsc::Sender<WriteRequest>,
     /// Data frame sender (low priority).
-    data_tx:        mpsc::Sender<WriteRequest>,
+    data_tx:           mpsc::Sender<WriteRequest>,
     /// Shared state.
-    pub(crate) shared:         Arc<Shared>,
+    pub(crate) shared: Arc<Shared>,
     /// Config.
-    config:         Config,
+    config:            Config,
     /// Next stream ID for open().
-    next_stream_id: u32,
+    next_stream_id:    u32,
 }
 
 impl Session {
@@ -220,13 +224,10 @@ impl Session {
 
         {
             let mut streams = self.shared.streams.lock().await;
-            streams.insert(
-                stream_id,
-                StreamEntry {
-                    data_tx,
-                    stream_shared: stream_shared.clone(),
-                },
-            );
+            streams.insert(stream_id, StreamEntry {
+                data_tx,
+                stream_shared: stream_shared.clone(),
+            });
         }
 
         tracing::debug!("open: sending SYN for stream {stream_id}");
@@ -257,7 +258,7 @@ impl Session {
             .is_closed
             .store(true, std::sync::atomic::Ordering::Release);
         // Wake up loops
-        self.shared.bucket_notify.notify_waiters();
+        self.shared.bucket_notify.notify_one();
     }
 }
 
@@ -300,7 +301,9 @@ async fn recv_loop<R: AsyncRead + Unpin>(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        shared.last_receive_time.store(now_ms, std::sync::atomic::Ordering::Release);
+        shared
+            .last_receive_time
+            .store(now_ms, std::sync::atomic::Ordering::Release);
 
         let header = match Frame::decode_header(&hdr) {
             Some(h) => h,
@@ -327,7 +330,9 @@ async fn recv_loop<R: AsyncRead + Unpin>(
                 break;
             }
             if is_v2 {
-                shared.bucket.fetch_sub(buf.len() as i32, std::sync::atomic::Ordering::Release);
+                shared
+                    .bucket
+                    .fetch_sub(buf.len() as i32, std::sync::atomic::Ordering::Release);
             }
             Bytes::from(buf)
         } else {
@@ -346,26 +351,20 @@ async fn recv_loop<R: AsyncRead + Unpin>(
 
                 {
                     let mut streams = shared.streams.lock().await;
-                    streams.insert(
-                        header.stream_id,
-                        StreamEntry {
-                            data_tx,
-                            stream_shared: stream_shared.clone(),
-                        },
-                    );
+                    streams.insert(header.stream_id, StreamEntry {
+                        data_tx,
+                        stream_shared: stream_shared.clone(),
+                    });
                 }
                 let stream = Stream::new(
                     header.stream_id,
                     data_rx,
                     ctrl_tx.clone(),
-                    ctrl_tx.clone(), // note: recv loop doesn't have data_tx, but accept_tx passes stream. stream uses session's data_tx?
-                    // wait! stream needs session data_tx. I should pass data_tx to recv_loop or just let recv_loop have it.
-                    // Let's pass it!
+                    ctrl_tx.clone(),
                     shared.clone(),
                     stream_shared,
                     config.clone(),
                 );
-                // I will fix the parameter passed below!
                 if accept_tx.send(stream).await.is_err() {
                     tracing::debug!("recv: accept channel closed");
                     break;
@@ -395,13 +394,21 @@ async fn recv_loop<R: AsyncRead + Unpin>(
                     break;
                 }
                 if payload.len() == 8 {
-                    let consumed = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
-                    let window = u32::from_le_bytes([payload[4], payload[5], payload[6], payload[7]]);
+                    let consumed =
+                        u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    let window =
+                        u32::from_le_bytes([payload[4], payload[5], payload[6], payload[7]]);
                     let streams = shared.streams.lock().await;
                     if let Some(entry) = streams.get(&header.stream_id) {
-                        entry.stream_shared.peer_consumed.store(consumed, std::sync::atomic::Ordering::Release);
-                        entry.stream_shared.peer_window.store(window, std::sync::atomic::Ordering::Release);
-                        entry.stream_shared.window_notify.notify_waiters();
+                        entry
+                            .stream_shared
+                            .peer_consumed
+                            .store(consumed, std::sync::atomic::Ordering::Release);
+                        entry
+                            .stream_shared
+                            .peer_window
+                            .store(window, std::sync::atomic::Ordering::Release);
+                        entry.stream_shared.window_notify.notify_one();
                     }
                 } else {
                     tracing::warn!("recv: invalid UPD payload");
@@ -494,7 +501,11 @@ async fn write_loop<W: AsyncWrite + Unpin>(
                         tracing::debug!("write: FIN sid={stream_id}");
                         Frame::fin(config.version, stream_id)
                     }
-                    WriteRequest::Upd { stream_id, consumed, window } => {
+                    WriteRequest::Upd {
+                        stream_id,
+                        consumed,
+                        window,
+                    } => {
                         tracing::debug!("write: UPD sid={stream_id} cons={consumed} win={window}");
                         Frame::upd(config.version, stream_id, consumed, window)
                     }

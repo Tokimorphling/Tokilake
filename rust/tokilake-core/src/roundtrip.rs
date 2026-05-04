@@ -218,7 +218,9 @@ impl<T: TunnelSession> Service<RoundtripRequest> for Roundtrip<T> {
 
             // Limit max frame size to prevent OOM (16 MB)
             if response_buffer.len() > 16 * 1024 * 1024 {
-                return Err(TunnelError::protocol("response frame too large (potential backpressure/OOM protection)"));
+                return Err(TunnelError::protocol(
+                    "response frame too large (potential backpressure/OOM protection)",
+                ));
             }
 
             if let Some(newline_pos) = response_buffer.iter().position(|&b| b == b'\n') {

@@ -5,7 +5,7 @@
 //! looks up a matching Channel, and passes a `GatewayRequest` down to the
 //! UpstreamService below.
 
-
+use super::{AuthedRequest, ChannelInfo, GatewayRequest};
 use bytes::Bytes;
 use http::Response;
 use http_body_util::Full;
@@ -13,8 +13,6 @@ use service_async::{
     MakeService, Service,
     layer::{FactoryLayer, layer_fn},
 };
-
-use super::{AuthedRequest, GatewayRequest, ChannelInfo};
 
 /// Routing service: maps model → channel, then delegates to inner.
 pub struct RouteService<T> {
@@ -36,12 +34,12 @@ where
 
         // TODO: look up from Toasty DB.  For now, use a stub channel.
         let channel = ChannelInfo {
-            name: "stub".into(),
+            name:     "stub".into(),
             provider: "openai".into(),
             base_url: Some("https://api.openai.com".into()),
-            api_key: Some("sk-stub".into()),
-            models: "gpt-4,gpt-3.5-turbo".into(),
-            weight: 1,
+            api_key:  Some("sk-stub".into()),
+            models:   "gpt-4,gpt-3.5-turbo".into(),
+            weight:   1,
         };
 
         let gw_req = GatewayRequest {

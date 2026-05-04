@@ -4,7 +4,7 @@
 //! from the incoming request, validates it (against Toasty DB in the future),
 //! and passes an `AuthedRequest` to the RouteService below.
 
-
+use super::AuthedRequest;
 use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use http_body_util::Full;
@@ -13,8 +13,6 @@ use service_async::{
     MakeService, Service,
     layer::{FactoryLayer, layer_fn},
 };
-
-use super::AuthedRequest;
 
 /// Authentication service: validates Bearer tokens.
 pub struct AuthService<T> {
@@ -30,7 +28,9 @@ where
 
     async fn call(&self, req: Request<Incoming>) -> Result<Self::Response, Self::Error> {
         // Extract Bearer token
-        let auth_header = req.headers().get("authorization")
+        let auth_header = req
+            .headers()
+            .get("authorization")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
             .map(|s| s.to_string());

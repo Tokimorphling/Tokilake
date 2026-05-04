@@ -3,12 +3,8 @@ members = ["tokilake-core", "tokilake-smux", "tokilake-server", "tokilake"]
 resolver = "2"
 
 [workspace.package]
-authors = ["tokilake"]
-categories = [
-    "asynchronous",
-    "network-programming",
-    "development-tools",
-]
+authors = ["nagisa"]
+categories = ["asynchronous", "network-programming", "development-tools"]
 edition = "2024"
 keywords = ["gateway", "proxy", "tunnel", "async"]
 license = "MIT"

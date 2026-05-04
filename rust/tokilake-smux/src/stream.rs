@@ -15,30 +15,30 @@ use tokio::sync::mpsc;
 /// Writes are sent as PSH frames through the session's write loop.
 pub struct Stream {
     /// Stream identifier.
-    id: u32,
+    id:             u32,
     /// Receiver for incoming data (from recv loop).
-    data_rx: mpsc::Receiver<Bytes>,
+    data_rx:        mpsc::Receiver<Bytes>,
     /// Sender for control requests (high priority).
-    ctrl_tx: mpsc::Sender<WriteRequest>,
+    ctrl_tx:        mpsc::Sender<WriteRequest>,
     /// Sender for data requests (low priority).
-    data_tx: mpsc::Sender<WriteRequest>,
+    data_tx:        mpsc::Sender<WriteRequest>,
     /// Session shared state (for global bucket).
     session_shared: Arc<Shared>,
     /// Stream shared state (for window updates).
-    stream_shared: Arc<StreamShared>,
+    stream_shared:  Arc<StreamShared>,
     /// Session config.
-    config: Config,
+    config:         Config,
     /// Partially consumed read buffer.
-    read_buf: Bytes,
+    read_buf:       Bytes,
     /// Whether FIN has been received (remote closed).
-    fin_received: bool,
+    fin_received:   bool,
     /// Whether FIN has been sent (local closed).
-    fin_sent: bool,
+    fin_sent:       bool,
 
     // V2 flow control counters
-    num_read: u32,
-    num_written: u32,
-    incr: u32,
+    num_read:                u32,
+    num_written:             u32,
+    incr:                    u32,
     window_update_threshold: u32,
 }
 
@@ -126,7 +126,11 @@ impl Stream {
         if self.config.version == 2 {
             loop {
                 // Check if session is closed
-                if self.session_shared.is_closed.load(std::sync::atomic::Ordering::Acquire) {
+                if self
+                    .session_shared
+                    .is_closed
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::BrokenPipe,
                         "session closed",
@@ -161,7 +165,7 @@ impl Stream {
                     self.data_tx
                         .send(WriteRequest::Data {
                             stream_id: self.id,
-                            data: Bytes::copy_from_slice(&data[..to_write]),
+                            data:      Bytes::copy_from_slice(&data[..to_write]),
                         })
                         .await
                         .map_err(|_| {
@@ -174,26 +178,13 @@ impl Stream {
                     // Wait for window update
                     tokio::select! {
                         _ = self.stream_shared.window_notify.notified() => continue,
-                        _ = self.data_rx.recv() => {
-                            // If we receive data while blocked on writing, we just drop it or process it?
-                            // Wait, if we drop it, we lose data!
-                            // The easiest way is to let `window_notify.notified()` be the only wait,
-                            // but what if the stream is closed?
-                            // If stream is closed, data_rx will return None. But since we don't
-                            // strictly need to receive data here, we can just wait for `window_notify`.
-                            // Let's just wait for `window_notify`. Wait, `window_notify` won't happen if session is dead.
-                            // But if session is dead, `is_closed` is true. `window_notify` might never be fired.
-                            // We should probably select on `window_notify` and `data_rx.closed()` or timeout.
-                            // The simplest safe way:
+                        _ = self.data_tx.closed() => {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::BrokenPipe,
+                                "session closed",
+                            ));
                         }
                     }
-                    // Proper select:
-                    // tokio::select! {
-                    //     _ = self.stream_shared.window_notify.notified() => continue,
-                    // }
-                    // Wait, if I do that, the loop continues.
-                    // But I need to be careful with `data_rx.recv()` because it takes the value.
-                    // I will just wait on window_notify. If session closes, it wakes up waiters.
                 }
             }
         } else {
@@ -203,10 +194,12 @@ impl Stream {
             self.data_tx
                 .send(WriteRequest::Data {
                     stream_id: self.id,
-                    data: Bytes::copy_from_slice(&data[..to_write]),
+                    data:      Bytes::copy_from_slice(&data[..to_write]),
                 })
                 .await
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "session closed"))?;
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::BrokenPipe, "session closed")
+                })?;
 
             Ok(to_write)
         }
@@ -256,7 +249,7 @@ impl Stream {
             .fetch_add(n as i32, std::sync::atomic::Ordering::Release)
             <= 0
         {
-            self.session_shared.bucket_notify.notify_waiters();
+            self.session_shared.bucket_notify.notify_one();
         }
 
         // Update local read counters
@@ -267,8 +260,8 @@ impl Stream {
         if self.incr >= self.window_update_threshold || self.num_read == n as u32 {
             let req = WriteRequest::Upd {
                 stream_id: self.id,
-                consumed: self.num_read,
-                window: self.config.max_stream_buffer as u32,
+                consumed:  self.num_read,
+                window:    self.config.max_stream_buffer as u32,
             };
             self.incr = 0;
 

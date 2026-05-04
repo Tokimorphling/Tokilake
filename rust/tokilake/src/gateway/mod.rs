@@ -24,26 +24,26 @@ use hyper::body::Incoming;
 /// Information about a resolved upstream channel.
 #[derive(Debug, Clone)]
 pub struct ChannelInfo {
-    pub name: String,
+    pub name:     String,
     pub provider: String,
     pub base_url: Option<String>,
-    pub api_key: Option<String>,
-    pub models: String,
-    pub weight: i32,
+    pub api_key:  Option<String>,
+    pub models:   String,
+    pub weight:   i32,
 }
 
 /// A request that has passed authentication.
 pub struct AuthedRequest {
-    pub inner: Request<Incoming>,
+    pub inner:      Request<Incoming>,
     pub token_name: String,
 }
 
 /// A request that has been routed to a specific channel.
 pub struct GatewayRequest {
-    pub inner: Request<Incoming>,
+    pub inner:      Request<Incoming>,
     pub token_name: String,
-    pub model: String,
-    pub channel: ChannelInfo,
+    pub model:      String,
+    pub channel:    ChannelInfo,
 }
 
 // ---------- Gateway configuration ----------

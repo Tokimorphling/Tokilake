@@ -2,8 +2,8 @@ use crate::{error::TunnelError, protocol::Token, tunnel::TunnelSession};
 use dashmap::DashMap;
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Instant,
 };

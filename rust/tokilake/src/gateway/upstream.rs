@@ -4,8 +4,7 @@
 //! resolved by the RouteService above it) and forwards it to the LLM provider via
 //! an HTTP client, streaming the response body back.
 
-use std::convert::Infallible;
-
+use super::GatewayRequest;
 use bytes::Bytes;
 use http::{Response, StatusCode};
 use http_body_util::Full;
@@ -13,8 +12,7 @@ use service_async::{
     MakeService, Service,
     layer::{FactoryLayer, layer_fn},
 };
-
-use super::GatewayRequest;
+use std::convert::Infallible;
 
 /// The leaf service: forwards the request to the resolved upstream.
 #[derive(Clone)]
@@ -26,11 +24,17 @@ impl Service<GatewayRequest> for UpstreamService {
 
     async fn call(&self, req: GatewayRequest) -> Result<Self::Response, Self::Error> {
         let channel = &req.channel;
-        let base_url = channel.base_url.as_deref().unwrap_or("https://api.openai.com");
+        let base_url = channel
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com");
         let _api_key = channel.api_key.as_deref().unwrap_or("");
 
         // Build upstream URI
-        let path = req.inner.uri().path_and_query()
+        let path = req
+            .inner
+            .uri()
+            .path_and_query()
             .map(|pq| pq.as_str())
             .unwrap_or("/");
         let upstream_uri = format!("{}{}", base_url.trim_end_matches('/'), path);
