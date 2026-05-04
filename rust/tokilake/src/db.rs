@@ -3,8 +3,8 @@ use anyhow::Result;
 
 pub async fn init_db() -> Result<Db> {
     // Build a Db handle, registering all models in this crate
-    let mut db = toasty::Db::builder()
-        .models(toasty::models!(crate::model::*))
+    let db = toasty::Db::builder()
+        .models(toasty::models!(crate::model::Channel, crate::model::Token))
         .connect("sqlite::memory:")
         .await?;
         

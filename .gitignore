@@ -39,3 +39,4 @@ __pycache__/
 
 docs/dev
 thirdparties
+*.txt

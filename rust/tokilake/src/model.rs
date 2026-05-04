@@ -1,4 +1,3 @@
-use toasty::Model;
 
 #[derive(Debug, toasty::Model)]
 pub struct Channel {

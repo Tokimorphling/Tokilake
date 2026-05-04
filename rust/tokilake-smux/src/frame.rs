@@ -87,6 +87,19 @@ impl Frame {
         Self::new(version, CMD_NOP, 0)
     }
 
+    /// Create an UPD frame (window update).
+    pub fn upd(version: u8, stream_id: u32, consumed: u32, window: u32) -> Self {
+        let mut data = vec![0u8; 8];
+        data[0..4].copy_from_slice(&consumed.to_le_bytes());
+        data[4..8].copy_from_slice(&window.to_le_bytes());
+        Self {
+            version,
+            cmd: CMD_UPD,
+            stream_id,
+            data: Bytes::from(data),
+        }
+    }
+
     /// Returns true if this is a SYN frame.
     pub fn is_syn(&self) -> bool {
         self.cmd == CMD_SYN

@@ -10,6 +10,21 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "sync", "io-util", "time", "macros"] }
+tokio = { version = "1", features = [
+    "rt",
+    "sync",
+    "io-util",
+    "time",
+    "macros",
+    "net",
+    "rt-multi-thread",
+] }
 bytes = "1"
 tracing = "0.1"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["async_tokio"] }
+
+[[bench]]
+name = "smux_bench"
+harness = false
