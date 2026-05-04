@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
 
     // Management API (Axum — for admin CRUD on channels/tokens)
     let api_app = Router::new()
-        .nest("/", api::router());
+        .merge(api::router());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Management API listening on http://{}", addr);
